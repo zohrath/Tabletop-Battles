@@ -1,0 +1,598 @@
+.app-shell {
+  box-sizing: border-box;
+  min-height: 100svh;
+  padding: 32px;
+  text-align: left;
+}
+
+.toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding-bottom: 24px;
+}
+
+.toolbar h1 {
+  margin: 0 0 8px;
+}
+
+.app-menu {
+  margin-left: auto;
+  position: relative;
+}
+
+.menu-button {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+  width: 40px;
+}
+
+.menu-button span {
+  background: var(--text-h);
+  border-radius: 999px;
+  display: block;
+  height: 2px;
+  width: 18px;
+}
+
+.menu-button:focus-visible,
+.menu-item:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.menu-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  min-width: 180px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 10;
+}
+
+.menu-item {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 9px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.menu-item:hover {
+  background: var(--social-bg);
+}
+
+.menu-item:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+}
+
+.menu-item input {
+  inline-size: 1px;
+  opacity: 0;
+  position: absolute;
+}
+
+.unit-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.unit-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.unit-card__header {
+  align-items: start;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.unit-card__header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+}
+
+.unit-card__header > div {
+  min-width: 0;
+  width: 100%;
+}
+
+.unit-card__title {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unit-card h2 {
+  margin-bottom: 0;
+}
+
+.unit-movement {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.weapon-status {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  width: 100%;
+}
+
+.weapon-group {
+  display: grid;
+  gap: 6px;
+}
+
+.weapon-group h3 {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.weapon-group > ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.weapon-group > ul > li {
+  display: block;
+}
+
+.weapon-stat-button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.weapon-stat-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.weapon-button-name {
+  color: var(--text-h);
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.weapon-keywords {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  list-style: none;
+  margin: 6px 0 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.weapon-keywords li {
+  flex: 0 0 auto;
+}
+
+.weapon-keywords button {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-h);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 3px 7px;
+}
+
+.weapon-keywords button:disabled {
+  color: var(--text);
+  cursor: default;
+  opacity: 0.75;
+}
+
+.weapon-keywords button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.keyword-description {
+  color: var(--text-h);
+  margin-top: 16px;
+  white-space: pre-wrap;
+}
+
+.weapon-row__title {
+  align-items: baseline;
+  color: var(--text-h);
+  display: flex;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.weapon-row__title span {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.weapon-row__title strong {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.unit-card strong {
+  color: var(--text-h);
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.48);
+  box-sizing: border-box;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  max-width: 100vw;
+  padding: 20px;
+  position: fixed;
+  width: 100vw;
+  z-index: 20;
+}
+
+.model-modal,
+.weapon-modal,
+.keyword-modal {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+  max-height: min(720px, calc(100svh - 40px));
+  max-width: 640px;
+  overflow: auto;
+  padding: 20px;
+  width: 100%;
+}
+
+.weapon-modal {
+  max-width: 560px;
+}
+
+.keyword-modal {
+  max-width: 560px;
+}
+
+.weapon-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px;
+}
+
+.model-modal__header {
+  align-items: start;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.model-modal__header h2 {
+  margin-bottom: 4px;
+}
+
+.modal-close {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 18px/1 var(--mono);
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  width: 36px;
+}
+
+.model-list {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.model-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 52px 1fr;
+  padding: 12px;
+}
+
+.model-stepper {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.model-stepper button {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 18px/1 var(--mono);
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.model-stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.model-stepper button:focus-visible,
+.modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.model-icon {
+  align-items: center;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  color: var(--text-h);
+  display: inline-flex;
+  flex-direction: column;
+  font: 700 14px/1 var(--mono);
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.model-row__content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.model-row__content span {
+  color: var(--text-h);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.model-stats {
+  display: flex;
+  gap: 4px;
+  justify-content: space-between;
+  margin: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.model-stats div {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 5px 2px;
+  text-align: center;
+}
+
+.model-stats dt {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  margin: 0 0 3px;
+  text-transform: uppercase;
+}
+
+.model-stats dd {
+  color: var(--text-h);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.1;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-state,
+.error-message {
+  margin-top: 24px;
+}
+
+.error-message {
+  color: #b42318;
+}
+
+.army-manager {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.army-manager-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr auto;
+  padding: 16px;
+}
+
+.army-manager-card__body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.army-manager-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.army-manager-card label span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.army-manager-card input {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--text-h);
+  font: 700 16px/1.3 var(--sans);
+  max-width: 420px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.army-manager-card input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.army-manager-card strong {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.army-manager-card__actions {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+}
+
+.army-manager-card__actions button {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.army-manager-card__actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 20px;
+  }
+
+  .toolbar {
+    align-items: start;
+  }
+
+  .app-menu {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+  }
+
+  .army-manager-card {
+    grid-template-columns: 1fr;
+  }
+
+  .army-manager-card__actions {
+    justify-content: stretch;
+  }
+
+  .army-manager-card__actions button {
+    flex: 1 1 0;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .model-modal,
+  .weapon-modal {
+    max-height: calc(100svh - 24px);
+    padding: 14px;
+  }
+}
