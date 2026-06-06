@@ -118,6 +118,14 @@
   width: 100%;
 }
 
+.unit-card {
+  position: relative;
+}
+
+.unit-card:hover {
+  border-color: var(--accent-border);
+}
+
 .unit-card__header:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 6px;
@@ -191,8 +199,14 @@
   cursor: pointer;
   display: block;
   padding: 8px;
+  position: relative;
   text-align: left;
   width: 100%;
+}
+
+.weapon-stat-button:hover {
+  border-color: var(--accent-border);
+  background: var(--social-bg);
 }
 
 .weapon-stat-button:focus-visible {
@@ -236,6 +250,10 @@
   font-size: 12px;
   line-height: 1.2;
   padding: 3px 7px;
+}
+
+.weapon-keywords button:not(:disabled):hover {
+  border-color: var(--accent-border);
 }
 
 .weapon-keywords button:disabled {
