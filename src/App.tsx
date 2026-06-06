@@ -2,17 +2,24 @@ import { useState } from 'react'
 import './App.css'
 import { ArmyUnitList } from './components/ArmyUnitList'
 import type { ArmyImported } from './types/armyImported'
-import { extractArmyUnits, type ArmyUnit } from './utils/armyImported'
+import {
+  extractArmyRules,
+  extractArmyUnits,
+  type ArmyRule,
+  type ArmyUnit,
+} from './utils/armyImported'
 
 const SAVED_ARMIES_STORAGE_KEY = 'tabletop-battles.saved-armies'
 
-type AppPage = 'battle' | 'armies'
+type AppPage = 'battle' | 'armies' | 'armyRule'
 
 type SavedArmy = {
   id: string
   importedAt: string
   name: string
+  selectedArmyRuleChoiceId?: string
   sourceFileName: string
+  armyRules: ArmyRule[]
   units: ArmyUnit[]
 }
 
@@ -39,6 +46,7 @@ function App() {
         id: createId(),
         importedAt: new Date().toISOString(),
         name: army.roster.name || file.name,
+        armyRules: extractArmyRules(army),
         sourceFileName: file.name,
         units: extractArmyUnits(army),
       }
@@ -121,6 +129,20 @@ function App() {
     setPage('battle')
   }
 
+  function chooseArmyRule(choiceId: string) {
+    if (!activeArmy) {
+      return
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) =>
+        army.id === activeArmy.id
+          ? { ...army, selectedArmyRuleChoiceId: choiceId }
+          : army,
+      ),
+    )
+  }
+
   function updateSavedArmies(
     getNextArmies: (currentArmies: SavedArmy[]) => SavedArmy[],
   ) {
@@ -139,6 +161,9 @@ function App() {
           <p>
             {page === 'armies'
               ? `${savedArmies.length} saved armies`
+              : page === 'armyRule'
+                ? getSelectedArmyRuleChoice(activeArmy)?.name ||
+                  'Choose an army rule'
               : activeArmy?.sourceFileName ||
                 'Choose a NewRecruit or BattleScribe roster JSON.'}
           </p>
@@ -181,6 +206,17 @@ function App() {
               >
                 Current Army
               </button>
+              <button
+                className="menu-item"
+                disabled={!activeArmy}
+                type="button"
+                onClick={() => {
+                  setPage('armyRule')
+                  setMenuOpen(false)
+                }}
+              >
+                Army Rule
+              </button>
               <label className="menu-item">
                 <input
                   accept="application/json,.json"
@@ -206,13 +242,110 @@ function App() {
           onOpenArmy={openArmy}
           onRenameArmy={renameArmy}
         />
+      ) : page === 'armyRule' ? (
+        <ArmyRulePage
+          army={activeArmy}
+          onChooseArmyRule={chooseArmyRule}
+        />
       ) : (
+        <>
+          <SelectedArmyRuleBanner army={activeArmy} />
         <ArmyUnitList
           onModelCountChange={changeModelCount}
           units={activeArmy?.units ?? []}
         />
+        </>
       )}
     </main>
+  )
+}
+
+type ArmyRulePageProps = {
+  army: SavedArmy | null
+  onChooseArmyRule: (choiceId: string) => void
+}
+
+function ArmyRulePage({ army, onChooseArmyRule }: ArmyRulePageProps) {
+  if (!army) {
+    return <p className="empty-state">Import or open an army first.</p>
+  }
+
+  const rules = army.armyRules ?? []
+  const choiceRules = rules.filter((rule) => rule.choices.length > 0)
+
+  if (rules.length === 0) {
+    return <p className="empty-state">No army rules found in this import.</p>
+  }
+
+  return (
+    <section className="army-rule-page" aria-label="Army rule selection">
+      {choiceRules.length > 0 ? (
+        choiceRules.map((rule) => (
+          <article className="army-rule-card" key={rule.id}>
+            <h2>{rule.name}</h2>
+            <label>
+              <span>Chosen rule</span>
+              <select
+                value={army.selectedArmyRuleChoiceId ?? ''}
+                onChange={(event) => onChooseArmyRule(event.target.value)}
+              >
+                <option value="">None selected</option>
+                {rule.choices.map((choice) => (
+                  <option key={choice.id} value={choice.id}>
+                    {choice.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <SelectedArmyRuleDescription army={army} />
+          </article>
+        ))
+      ) : (
+        rules.map((rule) => (
+          <article className="army-rule-card" key={rule.id}>
+            <h2>{rule.name}</h2>
+            <p>{rule.description}</p>
+          </article>
+        ))
+      )}
+    </section>
+  )
+}
+
+function SelectedArmyRuleBanner({ army }: { army: SavedArmy | null }) {
+  const selectedChoice = getSelectedArmyRuleChoice(army)
+
+  if (!selectedChoice) {
+    return null
+  }
+
+  return (
+    <section className="selected-army-rule">
+      <span>Army rule</span>
+      <strong>{selectedChoice.name}</strong>
+    </section>
+  )
+}
+
+function SelectedArmyRuleDescription({ army }: { army: SavedArmy }) {
+  const selectedChoice = getSelectedArmyRuleChoice(army)
+
+  if (!selectedChoice) {
+    return null
+  }
+
+  return <p className="army-rule-description">{selectedChoice.description}</p>
+}
+
+function getSelectedArmyRuleChoice(army: SavedArmy | null) {
+  if (!army?.selectedArmyRuleChoiceId) {
+    return null
+  }
+
+  return (
+    army.armyRules
+      ?.flatMap((rule) => rule.choices)
+      .find((choice) => choice.id === army.selectedArmyRuleChoiceId) ?? null
   )
 }
 
@@ -271,7 +404,12 @@ function ArmyManager({
 function loadSavedArmies(): SavedArmy[] {
   try {
     const savedArmies = localStorage.getItem(SAVED_ARMIES_STORAGE_KEY)
-    return savedArmies ? (JSON.parse(savedArmies) as SavedArmy[]) : []
+    const parsedArmies = savedArmies ? (JSON.parse(savedArmies) as SavedArmy[]) : []
+
+    return parsedArmies.map((army) => ({
+      ...army,
+      armyRules: army.armyRules ?? [],
+    }))
   } catch {
     return []
   }

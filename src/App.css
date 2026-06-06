@@ -179,6 +179,14 @@
   text-transform: uppercase;
 }
 
+.ranged-weapon-hint {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
 .weapon-group > ul {
   display: grid;
   gap: 6px;
@@ -344,6 +352,18 @@
   gap: 8px;
   margin-top: 16px;
   padding: 10px;
+}
+
+.weapon-carriers {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.weapon-carriers span {
+  color: var(--text-h);
+  font-weight: 700;
 }
 
 .model-modal__header {
@@ -575,6 +595,73 @@
 .army-manager-card__actions button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.army-rule-page {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.army-rule-card,
+.selected-army-rule {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.army-rule-card {
+  display: grid;
+  gap: 14px;
+}
+
+.army-rule-card h2 {
+  margin: 0;
+}
+
+.army-rule-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.army-rule-card label span,
+.selected-army-rule span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.army-rule-card select {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  font: 700 16px/1.3 var(--sans);
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.army-rule-card select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.army-rule-description {
+  color: var(--text-h);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.selected-army-rule {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.selected-army-rule strong {
+  color: var(--text-h);
 }
 
 @media (max-width: 640px) {

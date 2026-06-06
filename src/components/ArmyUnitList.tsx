@@ -135,6 +135,7 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
                   <strong>x{formatWeaponCount(selectedWeapon.number)}</strong>
                 )}
               </div>
+              <WeaponCarriers weapon={selectedWeapon} />
               <StatsGrid stats={getWeaponStats(selectedWeapon)} />
               <WeaponKeywords
                 weapon={selectedWeapon}
@@ -176,6 +177,22 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
         </div>
       )}
     </section>
+  );
+}
+
+type WeaponCarriersProps = {
+  weapon: ActiveWeapon;
+};
+
+function WeaponCarriers({ weapon }: WeaponCarriersProps) {
+  if (weapon.carriers.length === 0) {
+    return null;
+  }
+
+  return (
+    <p className="weapon-carriers">
+      <span>Carried by</span> {weapon.carriers.join(", ")}
+    </p>
   );
 }
 
@@ -239,6 +256,7 @@ function WeaponStatus({
         weapons={rangedWeapons}
         onWeaponSelect={onWeaponSelect}
         onKeywordSelect={onKeywordSelect}
+        showPistolContext
       />
       <WeaponGroup
         label="Melee"
@@ -254,6 +272,7 @@ type WeaponGroupProps = {
   label: string;
   onKeywordSelect?: (keyword: KeywordDetail) => void;
   onWeaponSelect: (weapon: ActiveWeapon) => void;
+  showPistolContext?: boolean;
   weapons: ActiveWeapon[];
 };
 
@@ -261,6 +280,7 @@ function WeaponGroup({
   label,
   onKeywordSelect,
   onWeaponSelect,
+  showPistolContext = false,
   weapons,
 }: WeaponGroupProps) {
   if (weapons.length === 0) {
@@ -270,9 +290,10 @@ function WeaponGroup({
   return (
     <section className="weapon-group">
       <h3>{label}</h3>
+      {showPistolContext && <RangedWeaponHint weapons={weapons} />}
       <ul>
         {weapons.map((weapon) => (
-          <li key={`${weapon.typeName}-${weapon.name}`}>
+          <li key={getWeaponKey(weapon)}>
             <button
               className="weapon-stat-button"
               type="button"
@@ -292,6 +313,22 @@ function WeaponGroup({
         ))}
       </ul>
     </section>
+  );
+}
+
+type RangedWeaponHintProps = {
+  weapons: ActiveWeapon[];
+};
+
+function RangedWeaponHint({ weapons }: RangedWeaponHintProps) {
+  const hasMainRangedWeapon = weapons.some((weapon) => !isPistolWeapon(weapon));
+
+  return (
+    <p className="ranged-weapon-hint">
+      {hasMainRangedWeapon
+        ? "Main ranged weapon available"
+        : "Pistol-only shooting"}
+    </p>
   );
 }
 
@@ -423,8 +460,12 @@ function getActiveWeapons(unit: ArmyUnit) {
       const activeWeaponCount = count * perModelCount;
       const key = `${weapon.typeName}-${weapon.name}`;
       const current = weaponCounts.get(key);
+      const carriers = new Set(current?.carriers ?? []);
+
+      carriers.add(model.name);
 
       weaponCounts.set(key, {
+        carriers: [...carriers],
         characteristics: weapon.characteristics,
         name: weapon.name,
         number: (current?.number ?? 0) + activeWeaponCount,
@@ -447,6 +488,7 @@ type ActiveWeapon = Pick<
   ArmyUnitWeapon,
   "characteristics" | "name" | "rules" | "typeName"
 > & {
+  carriers: string[];
   number: number;
 };
 
@@ -527,7 +569,9 @@ function getWeaponStats(weapon: ActiveWeapon, options: WeaponStatsOptions = {}) 
   });
 }
 
-function getWeaponKeywords(weapon: ActiveWeapon) {
+function getWeaponKeywords(
+  weapon: Pick<ArmyUnitWeapon, "characteristics" | "rules">,
+) {
   const importedKeywords = weapon.characteristics.find(
     (stat) => stat.name.toUpperCase() === "KEYWORDS",
   )?.$text;
@@ -547,6 +591,18 @@ function getWeaponKeywords(weapon: ActiveWeapon) {
       name: keyword,
     };
   });
+}
+
+function getWeaponKey(weapon: ActiveWeapon) {
+  return `${weapon.typeName}-${weapon.name}`;
+}
+
+function isPistolWeapon(
+  weapon: ActiveWeapon | Pick<ArmyUnitWeapon, "characteristics" | "rules">,
+) {
+  return getWeaponKeywords(weapon).some((keyword) =>
+    keyword.name.toLowerCase().startsWith("pistol"),
+  );
 }
 
 function scaleAttackValue(value: string, weaponCount: number) {
