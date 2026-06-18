@@ -4,6 +4,10 @@ import type {
   ArmyUnitModel,
   ArmyUnitWeapon,
 } from "../utils/armyImported";
+import { Modal } from "./modal/Modal";
+import { Header } from "./header/Header";
+import { ModelRow } from "./modelRow/ModelRow";
+import { UnorderedList } from "./unorderedList/UnorderedList";
 import UnitCard from "./unitCard/UnitCard";
 
 type ArmyUnitListProps = {
@@ -38,47 +42,29 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
       ))}
 
       {selectedUnit && (
-        <div
-          aria-labelledby="model-modal-title"
-          aria-modal="true"
-          className="modal-backdrop"
-          role="dialog"
-          onClick={() => setSelectedUnitId(null)}
+        <Modal
+          ariaLabelledBy="model-modal-title"
+          closeAriaLabel="Close model editor"
+          header={
+            <Header
+              title={selectedUnit.name}
+              titleId="model-modal-title"
+              subtitle={`${getRemainingModels(selectedUnit)} models remaining`}
+            />
+          }
+          onClose={() => setSelectedUnitId(null)}
         >
-          <section
-            className="model-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="model-modal__header">
-              <div>
-                <h2 id="model-modal-title">{selectedUnit.name}</h2>
-                <p>{getRemainingModels(selectedUnit)} models remaining</p>
-              </div>
-              <button
-                aria-label="Close model editor"
-                className="modal-close"
-                type="button"
-                onClick={() => setSelectedUnitId(null)}
-              >
-                x
-              </button>
-            </header>
-
-            <ul
-              className="model-list"
-              aria-label={`${selectedUnit.name} models`}
-            >
-              {selectedUnit.models.map((model) => (
-                <ModelRow
-                  key={model.id}
-                  model={model}
-                  unitId={selectedUnit.id}
-                  onModelCountChange={onModelCountChange}
-                />
-              ))}
-            </ul>
-          </section>
-        </div>
+          <UnorderedList ariaLabel={`${selectedUnit.name} models`}>
+            {selectedUnit.models.map((model) => (
+              <ModelRow
+                key={model.id}
+                model={model}
+                unitId={selectedUnit.id}
+                onModelCountChange={onModelCountChange}
+              />
+            ))}
+          </UnorderedList>
+        </Modal>
       )}
 
       {selectedWeapon && (
@@ -179,12 +165,6 @@ function WeaponCarriers({ weapon }: WeaponCarriersProps) {
     </p>
   );
 }
-
-type ModelRowProps = {
-  model: ArmyUnitModel;
-  onModelCountChange: (unitId: string, modelId: string, change: number) => void;
-  unitId: string;
-};
 
 type UnitMovementProps = {
   unit: ArmyUnit;
@@ -355,46 +335,6 @@ function WeaponKeywords({ onKeywordSelect, weapon }: WeaponKeywordsProps) {
   );
 }
 
-function ModelRow({ model, onModelCountChange, unitId }: ModelRowProps) {
-  const count = getModelCount(model.number);
-  const startingNumber = getStartingModels(model);
-  const stats = getUnitStats(model);
-
-  return (
-    <li className="model-row">
-      <div className="model-stepper">
-        <button
-          aria-label={`Add one ${model.name}`}
-          disabled={count >= startingNumber}
-          type="button"
-          onClick={() => onModelCountChange(unitId, model.id, 1)}
-        >
-          +
-        </button>
-        <div className="model-icon" aria-hidden="true">
-          {getModelInitials(model.name)}
-          <strong>{count}</strong>
-        </div>
-        <button
-          aria-label={`Remove one ${model.name}`}
-          disabled={count === 0}
-          type="button"
-          onClick={() => onModelCountChange(unitId, model.id, -1)}
-        >
-          -
-        </button>
-      </div>
-
-      <div className="model-row__content">
-        <span>{model.name}</span>
-        {stats.length > 0 && (
-          <StatsGrid ariaLabel={`${model.name} stats`} stats={stats} />
-        )}
-      </div>
-    </li>
-  );
-}
-
 type StatsGridProps = {
   ariaLabel?: string;
   stats: ModelStat[];
@@ -485,43 +425,6 @@ function getStartingModels(model: ArmyUnitModel) {
 
 function getModelCount(value: number | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function getModelInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
-function getUnitStats(model: ArmyUnitModel) {
-  const unitProfile = model.profiles.find(
-    (profile) => profile.typeName === "Unit",
-  );
-  return getStatsFromCharacteristics(unitProfile?.characteristics ?? []);
-}
-
-function getStatsFromCharacteristics(
-  characteristics: ArmyUnitModel["profiles"][number]["characteristics"],
-) {
-  const statOrder = ["M", "T", "SV", "W", "LD", "OC"];
-
-  return statOrder.flatMap((statName) => {
-    const characteristic = characteristics.find(
-      (stat) => stat.name.toUpperCase() === statName,
-    );
-
-    return characteristic
-      ? [
-          {
-            name: statName === "SV" ? "Sv" : statName,
-            value: characteristic.$text,
-          },
-        ]
-      : [];
-  });
 }
 
 type WeaponStatsOptions = {
