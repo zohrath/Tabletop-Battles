@@ -4,6 +4,7 @@ import type {
   ArmyUnitModel,
   ArmyUnitWeapon,
 } from "../utils/armyImported";
+import UnitCard from "./unitCard/UnitCard";
 
 type ArmyUnitListProps = {
   onModelCountChange: (unitId: string, modelId: string, change: number) => void;
@@ -27,30 +28,13 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
   return (
     <section className="unit-list" aria-label="Imported army units">
       {units.map((unit) => (
-        <article className="unit-card" key={unit.id}>
-          <div
-            className="unit-card__header"
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setSelectedUnitId(unit.id);
-              }
-            }}
-            onClick={() => setSelectedUnitId(unit.id)}
-          >
-            <div className="unit-card__title">
-              <h2>{unit.name}</h2>
-              <UnitMovement unit={unit} />
-            </div>
-            <WeaponStatus
-              unit={unit}
-              onKeywordSelect={(keyword) => setSelectedKeyword(keyword)}
-              onWeaponSelect={(weapon) => setSelectedWeapon(weapon)}
-            />
-          </div>
-        </article>
+        <UnitCard
+          key={unit.id}
+          unit={unit}
+          setSelectedKeyword={setSelectedKeyword}
+          setSelectedUnitId={setSelectedUnitId}
+          setSelectedWeapon={setSelectedWeapon}
+        />
       ))}
 
       {selectedUnit && (
@@ -180,7 +164,7 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
   );
 }
 
-type WeaponCarriersProps = {
+export type WeaponCarriersProps = {
   weapon: ActiveWeapon;
 };
 
@@ -206,8 +190,10 @@ type UnitMovementProps = {
   unit: ArmyUnit;
 };
 
-function UnitMovement({ unit }: UnitMovementProps) {
-  const unitProfiles = unit.profiles.filter((profile) => profile.typeName === "Unit");
+export function UnitMovement({ unit }: UnitMovementProps) {
+  const unitProfiles = unit.profiles.filter(
+    (profile) => profile.typeName === "Unit",
+  );
   const movementValues = [
     ...new Set(
       unitProfiles.flatMap((profile) => {
@@ -232,7 +218,7 @@ type WeaponStatusProps = UnitMovementProps & {
   onWeaponSelect: (weapon: ActiveWeapon) => void;
 };
 
-function WeaponStatus({
+export function WeaponStatus({
   onKeywordSelect,
   onWeaponSelect,
   unit,
@@ -303,12 +289,11 @@ function WeaponGroup({
               }}
             >
               <span className="weapon-button-name">{weapon.name}</span>
-              <StatsGrid stats={getWeaponStats(weapon, { scaleAttacks: true })} />
+              <StatsGrid
+                stats={getWeaponStats(weapon, { scaleAttacks: true })}
+              />
             </button>
-            <WeaponKeywords
-              weapon={weapon}
-              onKeywordSelect={onKeywordSelect}
-            />
+            <WeaponKeywords weapon={weapon} onKeywordSelect={onKeywordSelect} />
           </li>
         ))}
       </ul>
@@ -441,10 +426,7 @@ function getRemainingModels(unit: ArmyUnit) {
 }
 
 function getActiveWeapons(unit: ArmyUnit) {
-  const weaponCounts = new Map<
-    string,
-    ActiveWeapon
-  >();
+  const weaponCounts = new Map<string, ActiveWeapon>();
 
   unit.models.forEach((model) => {
     const count = getModelCount(model.number);
@@ -484,7 +466,7 @@ function formatWeaponCount(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
 
-type ActiveWeapon = Pick<
+export type ActiveWeapon = Pick<
   ArmyUnitWeapon,
   "characteristics" | "name" | "rules" | "typeName"
 > & {
@@ -492,7 +474,7 @@ type ActiveWeapon = Pick<
   number: number;
 };
 
-type KeywordDetail = {
+export type KeywordDetail = {
   description: string;
   name: string;
 };
@@ -515,7 +497,9 @@ function getModelInitials(name: string) {
 }
 
 function getUnitStats(model: ArmyUnitModel) {
-  const unitProfile = model.profiles.find((profile) => profile.typeName === "Unit");
+  const unitProfile = model.profiles.find(
+    (profile) => profile.typeName === "Unit",
+  );
   return getStatsFromCharacteristics(unitProfile?.characteristics ?? []);
 }
 
@@ -530,7 +514,12 @@ function getStatsFromCharacteristics(
     );
 
     return characteristic
-      ? [{ name: statName === "SV" ? "Sv" : statName, value: characteristic.$text }]
+      ? [
+          {
+            name: statName === "SV" ? "Sv" : statName,
+            value: characteristic.$text,
+          },
+        ]
       : [];
   });
 }
@@ -539,7 +528,10 @@ type WeaponStatsOptions = {
   scaleAttacks?: boolean;
 };
 
-function getWeaponStats(weapon: ActiveWeapon, options: WeaponStatsOptions = {}) {
+function getWeaponStats(
+  weapon: ActiveWeapon,
+  options: WeaponStatsOptions = {},
+) {
   const statOrder =
     weapon.typeName === "Ranged Weapons"
       ? ["Range", "A", "BS", "S", "AP", "D", "Keywords"]

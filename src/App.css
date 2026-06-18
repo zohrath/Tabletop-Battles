@@ -99,54 +99,6 @@
   margin-top: 24px;
 }
 
-.unit-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.unit-card__header {
-  align-items: start;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  display: grid;
-  gap: 10px;
-  padding: 0;
-  text-align: left;
-  width: 100%;
-}
-
-.unit-card {
-  position: relative;
-}
-
-.unit-card:hover {
-  border-color: var(--accent-border);
-}
-
-.unit-card__header:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 6px;
-}
-
-.unit-card__header > div {
-  min-width: 0;
-  width: 100%;
-}
-
-.unit-card__title {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.unit-card h2 {
-  margin-bottom: 0;
-}
-
 .unit-movement {
   background: var(--social-bg);
   border: 1px solid var(--border);
