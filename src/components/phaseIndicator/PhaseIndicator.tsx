@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Phase } from "../../types/Phase";
+import {
+  TURN_OWNER_LABELS,
+  type BattlePhase,
+} from "../../types/BattlePhase";
 import {
   PhaseIndicatorActions,
   PhaseIndicatorButton,
@@ -8,14 +11,8 @@ import {
 
 const EXIT_ANIMATION_MS = 260;
 
-export type PhaseIndicatorBattlePhase = {
-  phase: Phase;
-  player: string;
-  turn: number;
-};
-
 type PhaseIndicatorProps = {
-  battlePhase: PhaseIndicatorBattlePhase;
+  battlePhase: BattlePhase;
   canGoNext: boolean;
   canGoPrevious: boolean;
   canReset: boolean;
@@ -77,7 +74,7 @@ export function PhaseIndicator({
         >
           <div>
             <span>
-              Turn {battlePhase.turn} - {battlePhase.player}{" "}
+              Turn {battlePhase.turn} - {TURN_OWNER_LABELS[battlePhase.owner]}{" "}
               {battlePhase.phase}
             </span>
           </div>

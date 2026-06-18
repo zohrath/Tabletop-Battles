@@ -2,6 +2,14 @@ import { useState } from "react";
 import "./App.css";
 import { ArmyUnitList } from "./components/ArmyUnitList";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
+import { StratagemsIndicator } from "./components/stratagemsIndicator/StratagemsIndicator";
+import {
+  TURN_OWNERS,
+  TURNS,
+  type BattlePhase,
+  type TurnOwner,
+  type Turn,
+} from "./types/BattlePhase";
 import { Phase } from "./types/Phase";
 import type { ArmyImported } from "./types/armyImported";
 import {
@@ -10,25 +18,20 @@ import {
   type ArmyRule,
   type ArmyUnit,
 } from "./utils/armyImported";
+import {
+  bastionTaskForceStratagems,
+  coreStratagems,
+  getStratagemsForBattlePhase,
+} from "./utils/stratagems";
 
 const SAVED_ARMIES_STORAGE_KEY = "tabletop-battles.saved-armies";
 const PHASES = Object.values(Phase) as Phase[];
-const PLAYERS = ["Player 1", "Player 2"] as const;
-const TURNS = [1, 2, 3, 4, 5] as const;
 
 type AppPage = "battle" | "armies" | "armyRule";
-type PlayerName = (typeof PLAYERS)[number];
-type Turn = (typeof TURNS)[number];
-
-type BattlePhase = {
-  phase: Phase;
-  player: PlayerName;
-  turn: Turn;
-};
 
 const INITIAL_BATTLE_PHASE: BattlePhase = {
   phase: PHASES[0],
-  player: PLAYERS[0],
+  owner: TURN_OWNERS[0],
   turn: TURNS[0],
 };
 
@@ -56,6 +59,14 @@ function App() {
 
   const activeArmy =
     savedArmies.find((army) => army.id === activeArmyId) ?? null;
+  const visibleCoreStratagems = getStratagemsForBattlePhase(
+    coreStratagems,
+    battlePhase,
+  );
+  const visibleDetachmentStratagems = getStratagemsForBattlePhase(
+    bastionTaskForceStratagems,
+    battlePhase,
+  );
 
   async function handleRosterFile(file: File | undefined) {
     setError("");
@@ -66,11 +77,15 @@ function App() {
 
     try {
       const army = JSON.parse(await file.text()) as ArmyImported;
+      const armyRules = extractArmyRules(army);
+
+      console.log("Imported army stratagems", armyRules);
+
       const savedArmy: SavedArmy = {
         id: createId(),
         importedAt: new Date().toISOString(),
         name: army.roster.name || file.name,
-        armyRules: extractArmyRules(army),
+        armyRules,
         sourceFileName: file.name,
         units: extractArmyUnits(army),
       };
@@ -275,6 +290,15 @@ function App() {
         <ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />
       ) : (
         <>
+          {phaseIndicatorOpen && visibleDetachmentStratagems.length > 0 && (
+            <StratagemsIndicator stratagems={visibleDetachmentStratagems} />
+          )}
+          {phaseIndicatorOpen && visibleCoreStratagems.length > 0 && (
+            <StratagemsIndicator
+              side="right"
+              stratagems={visibleCoreStratagems}
+            />
+          )}
           <SelectedArmyRuleBanner army={activeArmy} />
           <ArmyUnitList
             onModelCountChange={changeModelCount}
@@ -310,7 +334,7 @@ function App() {
 function isFirstBattlePhase(current: BattlePhase) {
   return (
     current.turn === TURNS[0] &&
-    current.player === PLAYERS[0] &&
+    current.owner === TURN_OWNERS[0] &&
     current.phase === PHASES[0]
   );
 }
@@ -318,7 +342,7 @@ function isFirstBattlePhase(current: BattlePhase) {
 function isLastBattlePhase(current: BattlePhase) {
   return (
     current.turn === TURNS[TURNS.length - 1] &&
-    current.player === PLAYERS[PLAYERS.length - 1] &&
+    current.owner === TURN_OWNERS[TURN_OWNERS.length - 1] &&
     current.phase === PHASES[PHASES.length - 1]
   );
 }
@@ -331,14 +355,14 @@ function getPreviousBattlePhase(current: BattlePhase): BattlePhase {
     };
   }
 
-  const isFirstPlayer = current.player === PLAYERS[0];
+  const isFirstOwner = current.owner === TURN_OWNERS[0];
 
   return {
     phase: PHASES[PHASES.length - 1],
-    player: isFirstPlayer
-      ? PLAYERS[PLAYERS.length - 1]
-      : getPreviousPlayer(current.player),
-    turn: isFirstPlayer ? getPreviousTurn(current.turn) : current.turn,
+    owner: isFirstOwner
+      ? TURN_OWNERS[TURN_OWNERS.length - 1]
+      : getPreviousTurnOwner(current.owner),
+    turn: isFirstOwner ? getPreviousTurn(current.turn) : current.turn,
   };
 }
 
@@ -350,12 +374,12 @@ function getNextBattlePhase(current: BattlePhase): BattlePhase {
     };
   }
 
-  const isLastPlayer = current.player === PLAYERS[PLAYERS.length - 1];
+  const isLastOwner = current.owner === TURN_OWNERS[TURN_OWNERS.length - 1];
 
   return {
     phase: PHASES[0],
-    player: isLastPlayer ? PLAYERS[0] : getNextPlayer(current.player),
-    turn: isLastPlayer ? getNextTurn(current.turn) : current.turn,
+    owner: isLastOwner ? TURN_OWNERS[0] : getNextTurnOwner(current.owner),
+    turn: isLastOwner ? getNextTurn(current.turn) : current.turn,
   };
 }
 
@@ -373,19 +397,20 @@ function getNextTurn(currentTurn: Turn) {
   return TURNS[nextIndex];
 }
 
-function getPreviousPlayer(currentPlayer: PlayerName) {
-  const currentIndex = PLAYERS.indexOf(currentPlayer);
+function getPreviousTurnOwner(currentOwner: TurnOwner) {
+  const currentIndex = TURN_OWNERS.indexOf(currentOwner);
   const previousIndex =
-    currentIndex <= 0 ? PLAYERS.length - 1 : currentIndex - 1;
+    currentIndex <= 0 ? TURN_OWNERS.length - 1 : currentIndex - 1;
 
-  return PLAYERS[previousIndex];
+  return TURN_OWNERS[previousIndex];
 }
 
-function getNextPlayer(currentPlayer: PlayerName) {
-  const currentIndex = PLAYERS.indexOf(currentPlayer);
-  const nextIndex = currentIndex >= PLAYERS.length - 1 ? 0 : currentIndex + 1;
+function getNextTurnOwner(currentOwner: TurnOwner) {
+  const currentIndex = TURN_OWNERS.indexOf(currentOwner);
+  const nextIndex =
+    currentIndex >= TURN_OWNERS.length - 1 ? 0 : currentIndex + 1;
 
-  return PLAYERS[nextIndex];
+  return TURN_OWNERS[nextIndex];
 }
 
 function getPreviousPhase(currentPhase: Phase) {
