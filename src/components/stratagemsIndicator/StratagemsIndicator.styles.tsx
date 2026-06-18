@@ -73,9 +73,16 @@ export const StratagemsIndicatorPanel = styled.section`
 export const StratagemButton = styled.button`
   background: transparent;
   border: 0;
+  border-radius: 8px;
+  box-shadow:
+    0 0 10px rgba(34, 211, 238, 0.55),
+    0 0 22px rgba(34, 211, 238, 0.28);
   cursor: pointer;
   height: var(--stratagem-icon-size);
   padding: 0;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease;
   width: var(--stratagem-icon-size);
 
   img {
@@ -85,9 +92,19 @@ export const StratagemButton = styled.button`
     width: var(--stratagem-icon-size);
   }
 
+  &:hover {
+    box-shadow:
+      0 0 14px rgba(34, 211, 238, 0.72),
+      0 0 30px rgba(34, 211, 238, 0.4);
+    transform: translateY(-1px);
+  }
+
   &:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+    box-shadow:
+      0 0 14px rgba(34, 211, 238, 0.72),
+      0 0 30px rgba(34, 211, 238, 0.4);
   }
 `;
 

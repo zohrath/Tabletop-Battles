@@ -4,12 +4,16 @@ import { Phase } from "../types/Phase";
 import codexDiscipline from "../assets/codexDiscipline.png";
 import guidedDisruption from "../assets/guidedDisruption.png";
 import shockBombardment from "../assets/shockBombardment.png";
+import lightOfVengeance from "../assets/lightOfVengeance.png";
+import heresyUndone from "../assets/heresyUndone.png";
+import commandReroll from "../assets/commandReroll.png";
 
 export const coreStratagems: Stratagem[] = [
   {
     id: "core:command-re-roll",
     name: "Command Re-roll",
     cpCost: 1,
+    imageSrc: commandReroll,
     phases: "Any",
     source: "core",
     timing: "both",
@@ -44,7 +48,7 @@ export const coreStratagems: Stratagem[] = [
     source: "core",
     timing: "own-turn",
     description:
-      'Priming grenades or other explosives, these warriors draw back and hurl death into the enemy\'s midst.\n\nWHEN: Your Shooting phase.\n\nTARGET: One friendly unengaged EXPLOSIVES/GRENADES unit that is eligible to shoot and did not make an advance move this turn.\n\nEFFECT: Resolve the following sequence:\n1. Select one EXPLOSIVES/GRENADES model in your unit.\n2. Select one unengaged enemy unit within 8" of and visible to that model.\n3. Roll six D6: for each 4+, that enemy unit suffers 1 mortal wound.',
+      "Priming grenades or other explosives, these warriors draw back and hurl death into the enemy's midst.\n\nWHEN: Your Shooting phase.\n\nTARGET: One friendly unengaged EXPLOSIVES/GRENADES unit that is eligible to shoot and did not make an advance move this turn.\n\nEFFECT: Resolve the following sequence:\n1. Select one EXPLOSIVES/GRENADES model in your unit.\n2. Select one unengaged enemy unit within 8\" of and visible to that model.\n3. Roll six D6: for each 4+, that enemy unit suffers 1 mortal wound.",
   },
   {
     id: "core:crushing-impact",
@@ -74,7 +78,7 @@ export const coreStratagems: Stratagem[] = [
     source: "core",
     timing: "opponent-turn",
     description:
-      'A hail of fire can drive back advancing foes.\n\nWHEN: End of your opponent\'s Movement phase.\n\nTARGET: One friendly unengaged unit (excluding TITANIC units).\n\nEFFECT: Your unit shoots using snap shooting.\n\nSNAP SHOOTING\nYour unit shoots as described in Making Attacks. You can only target one visible enemy unit within 24" of your unit. Each attack only hits on an unmodified hit roll of 6, and you cannot re-roll hit rolls. After shooting, until the end of the phase, your unit is not eligible to start an action.',
+      "A hail of fire can drive back advancing foes.\n\nWHEN: End of your opponent's Movement phase.\n\nTARGET: One friendly unengaged unit (excluding TITANIC units).\n\nEFFECT: Your unit shoots using snap shooting.\n\nSNAP SHOOTING\nYour unit shoots as described in Making Attacks. You can only target one visible enemy unit within 24\" of your unit. Each attack only hits on an unmodified hit roll of 6, and you cannot re-roll hit rolls. After shooting, until the end of the phase, your unit is not eligible to start an action.",
   },
   {
     id: "core:smokescreen",
@@ -94,7 +98,7 @@ export const coreStratagems: Stratagem[] = [
     source: "core",
     timing: "opponent-turn",
     description:
-      'Voices raised in furious war cries, your warriors surge forth to meet the enemy\'s onslaught head-on.\n\nWHEN: End of your opponent\'s Charge phase.\n\nTARGET: One friendly unengaged unit within 12" of one or more enemy units. You can only select a VEHICLE unit if it is a CHARACTER/WALKER unit.\n\nEFFECT: Resolve a charge with your unit. Before making the charge roll, select Leap to Defend or Into the Fray, following that mode\'s charge target restrictions.',
+      "Voices raised in furious war cries, your warriors surge forth to meet the enemy's onslaught head-on.\n\nWHEN: End of your opponent's Charge phase.\n\nTARGET: One friendly unengaged unit within 12\" of one or more enemy units. You can only select a VEHICLE unit if it is a CHARACTER/WALKER unit.\n\nEFFECT: Resolve a charge with your unit. Before making the charge roll, select Leap to Defend or Into the Fray, following that mode's charge target restrictions.",
   },
   {
     id: "core:counteroffensive",
@@ -139,6 +143,7 @@ export const bastionTaskForceStratagems: Stratagem[] = [
     id: "bastion-task-force:light-of-vengeance",
     factionKey: "adeptus-astartes",
     detachmentKey: "bastion-task-force",
+    imageSrc: lightOfVengeance,
     name: "Light of Vengeance",
     cpCost: 1,
     phases: [Phase.Shooting, Phase.Fight],
@@ -180,6 +185,7 @@ export const bastionTaskForceStratagems: Stratagem[] = [
     id: "bastion-task-force:heresy-undone",
     factionKey: "adeptus-astartes",
     detachmentKey: "bastion-task-force",
+    imageSrc: heresyUndone,
     name: "Heresy Undone",
     cpCost: 1,
     phases: [Phase.Shooting, Phase.Charge],
