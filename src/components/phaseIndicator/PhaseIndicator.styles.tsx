@@ -1,5 +1,44 @@
 import styled from "@emotion/styled";
 
+const phaseIndicatorEnter = `
+  @keyframes phase-indicator-enter {
+    0% {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+
+    72% {
+      opacity: 1;
+      transform: translateX(-10px);
+    }
+
+    88% {
+      transform: translateX(4px);
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes phase-indicator-exit {
+    0% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    22% {
+      transform: translateX(-6px);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+`;
+
 export const PhaseIndicatorButton = styled.button`
   align-items: center;
   background: var(--social-bg);
@@ -37,6 +76,8 @@ export const PhaseIndicatorButton = styled.button`
 `;
 
 export const PhaseIndicatorPanel = styled.section`
+  ${phaseIndicatorEnter}
+
   align-items: center;
   background: var(--bg);
   border-top: 1px solid var(--border);
@@ -54,6 +95,18 @@ export const PhaseIndicatorPanel = styled.section`
   position: fixed;
   right: 0;
   z-index: 14;
+
+  &[data-state="open"] {
+    animation: phase-indicator-enter 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &[data-state="closed"] {
+    animation: phase-indicator-exit 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 
   strong {
     font-size: 12px;
