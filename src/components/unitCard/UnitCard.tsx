@@ -1,12 +1,8 @@
 import { Card, CardHeader, CardTitle } from "./UnitCard.styles";
 import type { ArmyUnit } from "../../utils/armyImported";
+import type { ActiveWeapon, KeywordDetail } from "../../types/armyUnitList";
 import type { SetStateAction } from "react";
-import {
-  UnitMovement,
-  WeaponStatus,
-  type ActiveWeapon,
-  type KeywordDetail,
-} from "../ArmyUnitList";
+import { UnitMovement, WeaponStatus } from "../ArmyUnitList";
 
 interface Props {
   unit: ArmyUnit;

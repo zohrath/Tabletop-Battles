@@ -4,16 +4,24 @@ import type {
   ArmyUnitModel,
   ArmyUnitWeapon,
 } from "../utils/armyImported";
+import type {
+  ActiveWeapon,
+  ArmyUnitListProps,
+  KeywordDetail,
+  RangedWeaponHintProps,
+  StatsGridProps,
+  UnitMovementProps,
+  WeaponCarriersProps,
+  WeaponGroupProps,
+  WeaponKeywordsProps,
+  WeaponStatsOptions,
+  WeaponStatusProps,
+} from "../types/armyUnitList";
 import { Modal } from "./modal/Modal";
 import { Header } from "./header/Header";
 import { ModelRow } from "./modelRow/ModelRow";
 import { UnorderedList } from "./unorderedList/UnorderedList";
 import UnitCard from "./unitCard/UnitCard";
-
-type ArmyUnitListProps = {
-  onModelCountChange: (unitId: string, modelId: string, change: number) => void;
-  units: ArmyUnit[];
-};
 
 export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -150,10 +158,6 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
   );
 }
 
-export type WeaponCarriersProps = {
-  weapon: ActiveWeapon;
-};
-
 function WeaponCarriers({ weapon }: WeaponCarriersProps) {
   if (weapon.carriers.length === 0) {
     return null;
@@ -165,10 +169,6 @@ function WeaponCarriers({ weapon }: WeaponCarriersProps) {
     </p>
   );
 }
-
-type UnitMovementProps = {
-  unit: ArmyUnit;
-};
 
 export function UnitMovement({ unit }: UnitMovementProps) {
   const unitProfiles = unit.profiles.filter(
@@ -192,11 +192,6 @@ export function UnitMovement({ unit }: UnitMovementProps) {
 
   return <span className="unit-movement">M {movementValues.join(" / ")}</span>;
 }
-
-type WeaponStatusProps = UnitMovementProps & {
-  onKeywordSelect: (keyword: KeywordDetail) => void;
-  onWeaponSelect: (weapon: ActiveWeapon) => void;
-};
 
 export function WeaponStatus({
   onKeywordSelect,
@@ -233,14 +228,6 @@ export function WeaponStatus({
     </div>
   );
 }
-
-type WeaponGroupProps = {
-  label: string;
-  onKeywordSelect?: (keyword: KeywordDetail) => void;
-  onWeaponSelect: (weapon: ActiveWeapon) => void;
-  showPistolContext?: boolean;
-  weapons: ActiveWeapon[];
-};
 
 function WeaponGroup({
   label,
@@ -281,10 +268,6 @@ function WeaponGroup({
   );
 }
 
-type RangedWeaponHintProps = {
-  weapons: ActiveWeapon[];
-};
-
 function RangedWeaponHint({ weapons }: RangedWeaponHintProps) {
   const hasMainRangedWeapon = weapons.some((weapon) => !isPistolWeapon(weapon));
 
@@ -296,11 +279,6 @@ function RangedWeaponHint({ weapons }: RangedWeaponHintProps) {
     </p>
   );
 }
-
-type WeaponKeywordsProps = {
-  onKeywordSelect?: (keyword: KeywordDetail) => void;
-  weapon: ActiveWeapon;
-};
 
 function WeaponKeywords({ onKeywordSelect, weapon }: WeaponKeywordsProps) {
   const keywords = getWeaponKeywords(weapon);
@@ -334,16 +312,6 @@ function WeaponKeywords({ onKeywordSelect, weapon }: WeaponKeywordsProps) {
     </ul>
   );
 }
-
-type StatsGridProps = {
-  ariaLabel?: string;
-  stats: ModelStat[];
-};
-
-type ModelStat = {
-  name: string;
-  value: string;
-};
 
 function StatsGrid({ ariaLabel, stats }: StatsGridProps) {
   return (
@@ -406,19 +374,6 @@ function formatWeaponCount(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
 
-export type ActiveWeapon = Pick<
-  ArmyUnitWeapon,
-  "characteristics" | "name" | "rules" | "typeName"
-> & {
-  carriers: string[];
-  number: number;
-};
-
-export type KeywordDetail = {
-  description: string;
-  name: string;
-};
-
 function getStartingModels(model: ArmyUnitModel) {
   return getModelCount(model.startingNumber, getModelCount(model.number));
 }
@@ -426,10 +381,6 @@ function getStartingModels(model: ArmyUnitModel) {
 function getModelCount(value: number | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
-
-type WeaponStatsOptions = {
-  scaleAttacks?: boolean;
-};
 
 function getWeaponStats(
   weapon: ActiveWeapon,
