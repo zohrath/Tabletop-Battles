@@ -1,7 +1,5 @@
 import { useState } from "react";
-import type {
-  ArmyUnit,
-} from "../utils/armyImported";
+import type { ArmyUnit } from "../utils/armyImported";
 import type {
   ActiveWeapon,
   ArmyUnitListProps,
@@ -161,4 +159,3 @@ function getRemainingModels(unit: ArmyUnit) {
 function getModelCount(value: number | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
-

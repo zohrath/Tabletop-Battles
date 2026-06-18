@@ -101,7 +101,10 @@ function RangedWeaponHint({ weapons }: RangedWeaponHintProps) {
   );
 }
 
-export function WeaponKeywords({ onKeywordSelect, weapon }: WeaponKeywordsProps) {
+export function WeaponKeywords({
+  onKeywordSelect,
+  weapon,
+}: WeaponKeywordsProps) {
   const keywords = getWeaponKeywords(weapon);
 
   if (keywords.length === 0) {

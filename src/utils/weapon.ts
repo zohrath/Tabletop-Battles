@@ -1,15 +1,15 @@
 import type { ArmyUnit, ArmyUnitWeapon } from "./armyImported";
-import type {
-  ActiveWeapon,
-  WeaponStatsOptions,
-} from "../types/armyUnitList";
+import type { ActiveWeapon, WeaponStatsOptions } from "../types/armyUnitList";
 
 export function getActiveWeapons(unit: ArmyUnit) {
   const weaponCounts = new Map<string, ActiveWeapon>();
 
   unit.models.forEach((model) => {
     const count = getModelCount(model.number);
-    const startingNumber = getStartingModels(model.number, model.startingNumber);
+    const startingNumber = getStartingModels(
+      model.number,
+      model.startingNumber,
+    );
 
     if (count === 0) {
       return;
@@ -114,7 +114,10 @@ export function formatWeaponCount(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
 
-function getStartingModels(number: number | undefined, startingNumber?: number) {
+function getStartingModels(
+  number: number | undefined,
+  startingNumber?: number,
+) {
   return getModelCount(startingNumber, getModelCount(number));
 }
 
