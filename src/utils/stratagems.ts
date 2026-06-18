@@ -1,6 +1,9 @@
 import type { Stratagem } from "../types/Stratagem";
 import type { BattlePhase, TurnOwner } from "../types/BattlePhase";
 import { Phase } from "../types/Phase";
+import codexDiscipline from "../assets/codexDiscipline.png";
+import guidedDisruption from "../assets/guidedDisruption.png";
+import shockBombardment from "../assets/shockBombardment.png";
 
 export const coreStratagems: Stratagem[] = [
   {
@@ -110,6 +113,7 @@ export const bastionTaskForceStratagems: Stratagem[] = [
     id: "bastion-task-force:codex-discipline",
     factionKey: "adeptus-astartes",
     detachmentKey: "bastion-task-force",
+    imageSrc: codexDiscipline,
     name: "Codex Discipline",
     cpCost: 1,
     phases: [Phase.Shooting, Phase.Fight],
@@ -122,6 +126,7 @@ export const bastionTaskForceStratagems: Stratagem[] = [
     id: "bastion-task-force:guided-disruption",
     factionKey: "adeptus-astartes",
     detachmentKey: "bastion-task-force",
+    imageSrc: guidedDisruption,
     name: "Guided Disruption",
     cpCost: 1,
     phases: [Phase.Shooting, Phase.Fight],
@@ -146,6 +151,7 @@ export const bastionTaskForceStratagems: Stratagem[] = [
     id: "bastion-task-force:shock-bombardment",
     factionKey: "adeptus-astartes",
     detachmentKey: "bastion-task-force",
+    imageSrc: shockBombardment,
     name: "Shock Bombardment",
     cpCost: 1,
     phases: [Phase.Shooting, Phase.Fight],

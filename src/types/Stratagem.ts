@@ -12,6 +12,7 @@ export type Stratagem = {
   id: string;
   factionKey?: string;
   detachmentKey?: string;
+  imageSrc?: string;
   name: string;
   description: string;
   cpCost: number;

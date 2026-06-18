@@ -47,7 +47,7 @@ export function StratagemsIndicator({
             type="button"
             onClick={() => setSelectedStratagem(stratagem)}
           >
-            <img alt="" src={hereseyUndone} />
+            <img alt="" src={stratagem.imageSrc ?? hereseyUndone} />
           </StratagemButton>
         ))}
       </StratagemsIndicatorPanel>

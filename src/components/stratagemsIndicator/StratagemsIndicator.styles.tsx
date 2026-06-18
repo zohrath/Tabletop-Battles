@@ -44,7 +44,8 @@ export const StratagemsIndicatorPanel = styled.section`
   }
 
   align-items: center;
-  animation: stratagems-indicator-enter-left 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: stratagems-indicator-enter-left 420ms
+    cubic-bezier(0.22, 1, 0.36, 1);
   background: transparent;
   box-sizing: border-box;
   display: grid;
@@ -54,7 +55,7 @@ export const StratagemsIndicatorPanel = styled.section`
   left: 0;
   padding: 0;
   position: fixed;
-  bottom: 10svh;
+  bottom: 15svh;
   width: var(--stratagem-icon-size);
   z-index: 12;
 
