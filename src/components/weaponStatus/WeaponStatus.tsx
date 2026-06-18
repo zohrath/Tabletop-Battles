@@ -13,6 +13,7 @@ import {
   isPistolWeapon,
 } from "../../utils/weapon";
 import { StatsGrid } from "../statsGrid/StatsGrid";
+import { Carriers } from "./WeaponStatus.styles";
 
 export function WeaponStatus({
   onKeywordSelect,
@@ -143,8 +144,8 @@ export function WeaponCarriers({ weapon }: WeaponCarriersProps) {
   }
 
   return (
-    <p className="weapon-carriers">
+    <Carriers>
       <span>Carried by</span> {weapon.carriers.join(", ")}
-    </p>
+    </Carriers>
   );
 }

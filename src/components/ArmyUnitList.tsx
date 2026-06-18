@@ -13,6 +13,13 @@ import { UnorderedList } from "./unorderedList/UnorderedList";
 import { WeaponCarriers, WeaponKeywords } from "./weaponStatus/WeaponStatus";
 import UnitCard from "./unitCard/UnitCard";
 import { formatWeaponCount, getWeaponStats } from "../utils/weapon";
+import {
+  KeywordDescription,
+  WeaponCount,
+  WeaponDetailCard,
+  WeaponName,
+  WeaponTitle,
+} from "./ArmyUnitList.styles";
 
 export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -67,83 +74,58 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
       )}
 
       {selectedWeapon && (
-        <div
-          aria-labelledby="weapon-modal-title"
-          aria-modal="true"
-          className="modal-backdrop"
-          role="dialog"
-          onClick={() => setSelectedWeapon(null)}
+        <Modal
+          ariaLabelledBy="weapon-modal-title"
+          closeAriaLabel="Close weapon details"
+          header={
+            <Header
+              title={selectedWeapon.name}
+              titleId="weapon-modal-title"
+              subtitle={
+                selectedWeapon.typeName === "Ranged Weapons"
+                  ? "Ranged weapon"
+                  : "Melee weapon"
+              }
+            />
+          }
+          maxWidth={560}
+          onClose={() => setSelectedWeapon(null)}
         >
-          <section
-            className="weapon-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="model-modal__header">
-              <div>
-                <h2 id="weapon-modal-title">{selectedWeapon.name}</h2>
-                <p>
-                  {selectedWeapon.typeName === "Ranged Weapons"
-                    ? "Ranged weapon"
-                    : "Melee weapon"}
-                </p>
-              </div>
-              <button
-                aria-label="Close weapon details"
-                className="modal-close"
-                type="button"
-                onClick={() => setSelectedWeapon(null)}
-              >
-                x
-              </button>
-            </header>
-
-            <div className="weapon-detail-card">
-              <div className="weapon-row__title">
-                <span>{selectedWeapon.name}</span>
-                {selectedWeapon.number > 1 && (
-                  <strong>x{formatWeaponCount(selectedWeapon.number)}</strong>
-                )}
-              </div>
-              <WeaponCarriers weapon={selectedWeapon} />
-              <StatsGrid stats={getWeaponStats(selectedWeapon)} />
-              <WeaponKeywords
-                weapon={selectedWeapon}
-                onKeywordSelect={(keyword) => setSelectedKeyword(keyword)}
-              />
-            </div>
-          </section>
-        </div>
+          <WeaponDetailCard>
+            <WeaponTitle>
+              <WeaponName>{selectedWeapon.name}</WeaponName>
+              {selectedWeapon.number > 1 && (
+                <WeaponCount>
+                  x{formatWeaponCount(selectedWeapon.number)}
+                </WeaponCount>
+              )}
+            </WeaponTitle>
+            <WeaponCarriers weapon={selectedWeapon} />
+            <StatsGrid stats={getWeaponStats(selectedWeapon)} />
+            <WeaponKeywords
+              weapon={selectedWeapon}
+              onKeywordSelect={(keyword) => setSelectedKeyword(keyword)}
+            />
+          </WeaponDetailCard>
+        </Modal>
       )}
 
       {selectedKeyword && (
-        <div
-          aria-labelledby="keyword-modal-title"
-          aria-modal="true"
-          className="modal-backdrop"
-          role="dialog"
-          onClick={() => setSelectedKeyword(null)}
+        <Modal
+          ariaLabelledBy="keyword-modal-title"
+          closeAriaLabel="Close keyword details"
+          header={
+            <Header
+              title={selectedKeyword.name}
+              titleId="keyword-modal-title"
+              subtitle="Keyword"
+            />
+          }
+          maxWidth={560}
+          onClose={() => setSelectedKeyword(null)}
         >
-          <section
-            className="keyword-modal"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="model-modal__header">
-              <div>
-                <h2 id="keyword-modal-title">{selectedKeyword.name}</h2>
-                <p>Keyword</p>
-              </div>
-              <button
-                aria-label="Close keyword details"
-                className="modal-close"
-                type="button"
-                onClick={() => setSelectedKeyword(null)}
-              >
-                x
-              </button>
-            </header>
-            <p className="keyword-description">{selectedKeyword.description}</p>
-          </section>
-        </div>
+          <KeywordDescription>{selectedKeyword.description}</KeywordDescription>
+        </Modal>
       )}
     </section>
   );

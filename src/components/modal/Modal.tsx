@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Backdrop, Surface } from "./Modal.styles";
+import { Backdrop, CloseButton, Header, Surface } from "./Modal.styles";
 
 type ModalProps = {
   ariaLabelledBy: string;
@@ -27,17 +27,16 @@ export function Modal({
     >
       <Surface maxWidth={maxWidth} onClick={(event) => event.stopPropagation()}>
         {header && (
-          <header className="model-modal__header">
+          <Header>
             {header}
-            <button
+            <CloseButton
               aria-label={closeAriaLabel}
-              className="modal-close"
               type="button"
               onClick={onClose}
             >
               x
-            </button>
-          </header>
+            </CloseButton>
+          </Header>
         )}
         {children}
       </Surface>

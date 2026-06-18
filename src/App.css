@@ -227,128 +227,10 @@
   outline-offset: 2px;
 }
 
-.keyword-description {
-  color: var(--text-h);
-  margin-top: 16px;
-  white-space: pre-wrap;
-}
-
-.weapon-row__title {
-  align-items: baseline;
-  color: var(--text-h);
-  display: flex;
-  font-size: 14px;
-  gap: 8px;
-  justify-content: space-between;
-  min-width: 0;
-}
-
-.weapon-row__title span {
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.weapon-row__title strong {
-  font-family: var(--mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 .unit-card strong {
   color: var(--text-h);
   font-size: 16px;
   white-space: nowrap;
-}
-
-.modal-backdrop {
-  align-items: center;
-  background: rgba(0, 0, 0, 0.48);
-  box-sizing: border-box;
-  display: flex;
-  inset: 0;
-  justify-content: center;
-  max-width: 100vw;
-  padding: 20px;
-  position: fixed;
-  width: 100vw;
-  z-index: 20;
-}
-
-.model-modal,
-.weapon-modal,
-.keyword-modal {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  box-sizing: border-box;
-  max-height: min(720px, calc(100svh - 40px));
-  max-width: 640px;
-  overflow: auto;
-  padding: 20px;
-  width: 100%;
-}
-
-.weapon-modal {
-  max-width: 560px;
-}
-
-.keyword-modal {
-  max-width: 560px;
-}
-
-.weapon-detail-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 10px;
-}
-
-.weapon-carriers {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.3;
-  margin: 0;
-}
-
-.weapon-carriers span {
-  color: var(--text-h);
-  font-weight: 700;
-}
-
-.model-modal__header {
-  align-items: start;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  padding-bottom: 16px;
-}
-
-.model-modal__header h2 {
-  margin-bottom: 4px;
-}
-
-.modal-close {
-  align-items: center;
-  background: var(--social-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-h);
-  cursor: pointer;
-  display: inline-flex;
-  font: 700 18px/1 var(--mono);
-  height: 36px;
-  justify-content: center;
-  padding: 0;
-  width: 36px;
-}
-
-.modal-close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .model-row__content span {
@@ -576,13 +458,4 @@
     flex: 1 1 0;
   }
 
-  .modal-backdrop {
-    padding: 12px;
-  }
-
-  .model-modal,
-  .weapon-modal {
-    max-height: calc(100svh - 24px);
-    padding: 14px;
-  }
 }
