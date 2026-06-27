@@ -13,7 +13,7 @@ import grenade from "../assets/grenade.png";
 import crushingImpact from "../assets/crushingImpact.png";
 import rapidIngress from "../assets/rapidIngress.png";
 import fireOverwatch from "../assets/fireOverwatch.png";
-import smokescreen from "../assets/smokescreen.png";
+import smokescreen from "../assets/smokeScreen.png";
 import heroicIntervention from "../assets/heroicIntervention.png";
 import counteroffensive from "../assets/counterOffensive.png";
 
