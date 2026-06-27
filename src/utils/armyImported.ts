@@ -12,9 +12,17 @@ export type ArmyUnit = {
   name: string
   number: number
   points?: number
+  abilities: ArmyUnitAbility[]
   categories: ArmyImportedCategory[]
   profiles: ArmyImportedProfile[]
   models: ArmyUnitModel[]
+}
+
+export type ArmyUnitAbility = {
+  id: string
+  name: string
+  displayName?: string
+  description: string
 }
 
 export type ArmyUnitModel = {
@@ -71,6 +79,7 @@ export function extractArmyUnits(army: ArmyImported): ArmyUnit[] {
         name: selection.name,
         number: selection.number,
         points: getPoints(selection.costs),
+        abilities: extractUnitAbilities(selection),
         categories: selection.categories ?? [],
         profiles: selection.profiles ?? [],
         models: extractUnitModels(selection),
@@ -194,6 +203,60 @@ function isWeaponProfile(
   typeName: 'Melee Weapons' | 'Ranged Weapons'
 } {
   return profile.typeName === 'Melee Weapons' || profile.typeName === 'Ranged Weapons'
+}
+
+function extractUnitAbilities(selection: ArmyImportedSelection): ArmyUnitAbility[] {
+  const abilities = collectSelectionProfiles(selection)
+    .filter(isAbilityProfile)
+    .map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      description: getAbilityDescription(profile),
+    }))
+  const uniqueAbilities = new Map<string, ArmyUnitAbility>()
+
+  abilities.forEach((ability) => {
+    uniqueAbilities.set(`${ability.name}:${ability.description}`, ability)
+  })
+
+  return [...uniqueAbilities.values()].sort(compareAbilities)
+}
+
+function compareAbilities(first: ArmyUnitAbility, second: ArmyUnitAbility) {
+  const firstIsLeader = isLeaderAbility(first)
+  const secondIsLeader = isLeaderAbility(second)
+
+  if (firstIsLeader !== secondIsLeader) {
+    return firstIsLeader ? 1 : -1
+  }
+
+  return first.name.localeCompare(second.name)
+}
+
+function isLeaderAbility(ability: ArmyUnitAbility) {
+  return ability.name.trim().toLowerCase() === 'leader'
+}
+
+function collectSelectionProfiles(
+  selection: ArmyImportedSelection,
+): ArmyImportedProfile[] {
+  return [
+    ...(selection.profiles ?? []),
+    ...(selection.selections ?? []).flatMap(collectSelectionProfiles),
+  ]
+}
+
+function isAbilityProfile(profile: ArmyImportedProfile) {
+  return profile.typeName === 'Abilities'
+}
+
+function getAbilityDescription(profile: ArmyImportedProfile) {
+  const description =
+    profile.characteristics.find(
+      (characteristic) => characteristic.name.toLowerCase() === 'description',
+    ) ?? profile.characteristics[0]
+
+  return description?.$text ?? ''
 }
 
 function getPoints(costs: ArmyImportedCost[] = []) {

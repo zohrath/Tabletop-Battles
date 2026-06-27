@@ -1,6 +1,11 @@
 import type { ArmyUnit, ArmyUnitWeapon } from "../utils/armyImported";
 
 export type ArmyUnitListProps = {
+  onAbilityDisplayNameChange: (
+    unitId: string,
+    abilityId: string,
+    displayName: string,
+  ) => void;
   onModelCountChange: (unitId: string, modelId: string, change: number) => void;
   units: ArmyUnit[];
 };
@@ -54,8 +59,12 @@ export type ActiveWeapon = Pick<
 };
 
 export type KeywordDetail = {
+  abilityId?: string;
   description: string;
+  displayName?: string;
+  source?: "ability" | "keyword";
   name: string;
+  unitId?: string;
 };
 
 export type WeaponStatsOptions = {

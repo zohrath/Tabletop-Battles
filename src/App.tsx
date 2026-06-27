@@ -191,6 +191,45 @@ function App() {
     );
   }
 
+  function changeAbilityDisplayName(
+    unitId: string,
+    abilityId: string,
+    displayName: string,
+  ) {
+    if (!activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) => {
+            if (unit.id !== unitId) {
+              return unit;
+            }
+
+            return {
+              ...unit,
+              abilities: (unit.abilities ?? []).map((ability) =>
+                ability.id === abilityId
+                  ? {
+                      ...ability,
+                      displayName: displayName.trim() || undefined,
+                    }
+                  : ability,
+              ),
+            };
+          }),
+        };
+      }),
+    );
+  }
+
   function updateSavedArmies(
     getNextArmies: (currentArmies: SavedArmy[]) => SavedArmy[],
   ) {
@@ -337,6 +376,7 @@ function App() {
           )}
           <SelectedArmyRuleBanner army={activeArmy} />
           <ArmyUnitList
+            onAbilityDisplayNameChange={changeAbilityDisplayName}
             onModelCountChange={changeModelCount}
             units={activeArmy?.units ?? []}
           />
@@ -687,6 +727,13 @@ function loadSavedArmies(): SavedArmy[] {
     return parsedArmies.map((army) => ({
       ...army,
       armyRules: army.armyRules ?? [],
+      units: (army.units ?? []).map((unit) => ({
+        ...unit,
+        abilities: (unit.abilities ?? []).map((ability) => ({
+          ...ability,
+          displayName: ability.displayName || undefined,
+        })).sort(compareSavedAbilities),
+      })),
     }));
   } catch {
     return [];
@@ -706,6 +753,24 @@ function getModelCount(
   fallback: number = 0,
 ): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function compareSavedAbilities(
+  first: ArmyUnit["abilities"][number],
+  second: ArmyUnit["abilities"][number],
+) {
+  const firstIsLeader = isSavedLeaderAbility(first);
+  const secondIsLeader = isSavedLeaderAbility(second);
+
+  if (firstIsLeader !== secondIsLeader) {
+    return firstIsLeader ? 1 : -1;
+  }
+
+  return first.name.localeCompare(second.name);
+}
+
+function isSavedLeaderAbility(ability: ArmyUnit["abilities"][number]) {
+  return ability.name.trim().toLowerCase() === "leader";
 }
 
 export default App;

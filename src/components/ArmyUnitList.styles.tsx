@@ -6,6 +6,35 @@ export const KeywordDescription = styled.p`
   white-space: pre-wrap;
 `;
 
+export const KeywordEditor = styled.label`
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+
+  span {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  input {
+    background: var(--social-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: var(--text-h);
+    font: 700 16px/1.3 var(--sans);
+    padding: 8px 10px;
+    width: 100%;
+  }
+
+  input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+`;
+
 export const WeaponDetailCard = styled.div`
   border: 1px solid var(--border);
   border-radius: 8px;

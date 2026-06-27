@@ -15,13 +15,18 @@ import UnitCard from "./unitCard/UnitCard";
 import { formatWeaponCount, getWeaponStats } from "../utils/weapon";
 import {
   KeywordDescription,
+  KeywordEditor,
   WeaponCount,
   WeaponDetailCard,
   WeaponName,
   WeaponTitle,
 } from "./ArmyUnitList.styles";
 
-export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
+export function ArmyUnitList({
+  onAbilityDisplayNameChange,
+  onModelCountChange,
+  units,
+}: ArmyUnitListProps) {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [selectedWeapon, setSelectedWeapon] = useState<ActiveWeapon | null>(
     null,
@@ -116,14 +121,41 @@ export function ArmyUnitList({ onModelCountChange, units }: ArmyUnitListProps) {
           closeAriaLabel="Close keyword details"
           header={
             <Header
-              title={selectedKeyword.name}
+              title={selectedKeyword.displayName || selectedKeyword.name}
               titleId="keyword-modal-title"
-              subtitle="Keyword"
+              subtitle={selectedKeyword.source === "ability" ? "Ability" : "Keyword"}
             />
           }
           maxWidth={560}
           onClose={() => setSelectedKeyword(null)}
         >
+          {selectedKeyword.source === "ability" &&
+            selectedKeyword.unitId &&
+            selectedKeyword.abilityId && (
+              <KeywordEditor>
+                <span>Chip text</span>
+                <input
+                  value={selectedKeyword.displayName ?? selectedKeyword.name}
+                  onChange={(event) => {
+                    const displayName = event.target.value;
+
+                    onAbilityDisplayNameChange(
+                      selectedKeyword.unitId!,
+                      selectedKeyword.abilityId!,
+                      displayName,
+                    );
+                    setSelectedKeyword((currentKeyword) =>
+                      currentKeyword
+                        ? {
+                            ...currentKeyword,
+                            displayName,
+                          }
+                        : currentKeyword,
+                    );
+                  }}
+                />
+              </KeywordEditor>
+            )}
           <KeywordDescription>{selectedKeyword.description}</KeywordDescription>
         </Modal>
       )}
