@@ -1,85 +1,9 @@
 import styled from "@emotion/styled";
 
-const phaseIndicatorEnter = `
-  @keyframes phase-indicator-enter {
-    0% {
-      opacity: 0;
-      transform: translateX(100%);
-    }
-
-    72% {
-      opacity: 1;
-      transform: translateX(-10px);
-    }
-
-    88% {
-      transform: translateX(4px);
-    }
-
-    100% {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes phase-indicator-exit {
-    0% {
-      opacity: 1;
-      transform: translateX(0);
-    }
-
-    22% {
-      transform: translateX(-6px);
-    }
-
-    100% {
-      opacity: 0;
-      transform: translateX(100%);
-    }
-  }
-`;
-
-export const PhaseIndicatorButton = styled.button`
-  align-items: center;
-  background: var(--social-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  bottom: 10svh;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  display: inline-flex;
-  height: 36px;
-  justify-content: center;
-  padding: 0;
-  position: fixed;
-  right: 0;
-  width: 36px;
-  z-index: 15;
-
-  span {
-    border-block: 6px solid transparent;
-    border-left: 0;
-    border-right: 8px solid var(--text-h);
-    display: block;
-    height: 0;
-    width: 0;
-  }
-
-  &[aria-expanded="true"] span {
-    transform: rotate(180deg);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-`;
-
 export const PhaseIndicatorPanel = styled.section`
-  ${phaseIndicatorEnter}
-
   align-items: center;
   background: var(--bg);
+  border-inline: 1px solid var(--border);
   border-top: 1px solid var(--border);
   bottom: 0;
   box-shadow: var(--shadow);
@@ -89,24 +13,15 @@ export const PhaseIndicatorPanel = styled.section`
   flex-direction: column;
   gap: 8px;
   justify-content: center;
-  left: 0;
+  left: 50%;
+  margin-inline: auto;
+  max-width: var(--app-max-width);
   min-height: 96px;
   padding: 18px 64px;
   position: fixed;
-  right: 0;
+  transform: translateX(-50%);
+  width: 100%;
   z-index: 14;
-
-  &[data-state="open"] {
-    animation: phase-indicator-enter 420ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  &[data-state="closed"] {
-    animation: phase-indicator-exit 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
 
   strong {
     font-size: 12px;

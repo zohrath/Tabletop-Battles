@@ -1,8 +1,11 @@
 import { useState } from "react";
 import "./App.css";
 import { ArmyUnitList } from "./components/ArmyUnitList";
+import { Header } from "./components/header/Header";
+import { Modal } from "./components/modal/Modal";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
 import { StratagemsIndicator } from "./components/stratagemsIndicator/StratagemsIndicator";
+import { StratagemsToggleButton } from "./components/stratagemsIndicator/StratagemsIndicator.styles";
 import {
   TURN_OWNERS,
   TURNS,
@@ -53,12 +56,16 @@ function App() {
   const [page, setPage] = useState<AppPage>("battle");
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [firstTurnOwner, setFirstTurnOwner] = useState<TurnOwner | null>(null);
+  const [firstTurnModalOpen, setFirstTurnModalOpen] = useState(false);
+  const [stratagemsIndicatorOpen, setStratagemsIndicatorOpen] =
+    useState(false);
   const [battlePhase, setBattlePhase] =
     useState<BattlePhase>(INITIAL_BATTLE_PHASE);
-  const [phaseIndicatorOpen, setPhaseIndicatorOpen] = useState(false);
 
   const activeArmy =
     savedArmies.find((army) => army.id === activeArmyId) ?? null;
+  const turnOwners = getTurnOwners(firstTurnOwner);
   const visibleCoreStratagems = getStratagemsForBattlePhase(
     coreStratagems,
     battlePhase,
@@ -67,6 +74,8 @@ function App() {
     bastionTaskForceStratagems,
     battlePhase,
   );
+  const hasVisibleStratagems =
+    visibleCoreStratagems.length > 0 || visibleDetachmentStratagems.length > 0;
 
   async function handleRosterFile(file: File | undefined) {
     setError("");
@@ -261,6 +270,16 @@ function App() {
               >
                 Army Rule
               </button>
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => {
+                  setFirstTurnModalOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                First Turn
+              </button>
               <label className="menu-item">
                 <input
                   accept="application/json,.json"
@@ -290,10 +309,27 @@ function App() {
         <ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />
       ) : (
         <>
-          {phaseIndicatorOpen && visibleDetachmentStratagems.length > 0 && (
+          {!firstTurnOwner && (
+            <p className="turn-owner-warning">Choose who started first turn.</p>
+          )}
+          {hasVisibleStratagems && (
+            <StratagemsToggleButton
+              aria-expanded={stratagemsIndicatorOpen}
+              aria-label={
+                stratagemsIndicatorOpen
+                  ? "Hide stratagems indicator"
+                  : "Show stratagems indicator"
+              }
+              type="button"
+              onClick={() => setStratagemsIndicatorOpen((isOpen) => !isOpen)}
+            >
+              <span aria-hidden="true" />
+            </StratagemsToggleButton>
+          )}
+          {stratagemsIndicatorOpen && visibleDetachmentStratagems.length > 0 && (
             <StratagemsIndicator stratagems={visibleDetachmentStratagems} />
           )}
-          {phaseIndicatorOpen && visibleCoreStratagems.length > 0 && (
+          {stratagemsIndicatorOpen && visibleCoreStratagems.length > 0 && (
             <StratagemsIndicator
               side="right"
               stratagems={visibleCoreStratagems}
@@ -306,48 +342,113 @@ function App() {
           />
         </>
       )}
+      {firstTurnModalOpen && (
+        <Modal
+          ariaLabelledBy="first-turn-modal-title"
+          closeAriaLabel="Close first turn settings"
+          header={
+            <Header
+              title="First Turn"
+              titleId="first-turn-modal-title"
+              subtitle="Choose who started the battle round sequence."
+            />
+          }
+          maxWidth={480}
+          onClose={() => setFirstTurnModalOpen(false)}
+        >
+          <fieldset className="first-turn-options">
+            <legend>First player</legend>
+            {TURN_OWNERS.map((owner) => (
+              <label key={owner}>
+                <input
+                  checked={firstTurnOwner === owner}
+                  name="first-turn-owner"
+                  type="radio"
+                  value={owner}
+                  onChange={() => {
+                    setFirstTurnOwner(owner);
+                    setBattlePhase((current) => ({
+                      ...current,
+                      owner:
+                        current.owner === TURN_OWNERS[0]
+                          ? owner
+                          : getOtherTurnOwner(owner),
+                    }));
+                  }}
+                />
+                <span>{owner === "You" ? "You started" : "Opponent started"}</span>
+              </label>
+            ))}
+          </fieldset>
+        </Modal>
+      )}
       <PhaseIndicator
         battlePhase={battlePhase}
-        canGoNext={!isLastBattlePhase(battlePhase)}
-        canGoPrevious={!isFirstBattlePhase(battlePhase)}
-        canReset={isLastBattlePhase(battlePhase)}
-        isOpen={phaseIndicatorOpen}
+        canGoNext={!isLastBattlePhase(battlePhase, turnOwners)}
+        canGoPrevious={!isFirstBattlePhase(battlePhase, turnOwners)}
+        canReset={isLastBattlePhase(battlePhase, turnOwners)}
         onNextPhase={() =>
           setBattlePhase((current) =>
-            isLastBattlePhase(current) ? current : getNextBattlePhase(current),
+            isLastBattlePhase(current, turnOwners)
+              ? current
+              : getNextBattlePhase(current, turnOwners),
           )
         }
         onPreviousPhase={() =>
           setBattlePhase((current) =>
-            isFirstBattlePhase(current)
+            isFirstBattlePhase(current, turnOwners)
               ? current
-              : getPreviousBattlePhase(current),
+              : getPreviousBattlePhase(current, turnOwners),
           )
         }
-        onReset={() => setBattlePhase(INITIAL_BATTLE_PHASE)}
-        onToggle={() => setPhaseIndicatorOpen((isOpen) => !isOpen)}
+        onReset={() => setBattlePhase(getInitialBattlePhase(turnOwners))}
       />
     </main>
   );
 }
 
-function isFirstBattlePhase(current: BattlePhase) {
+function getInitialBattlePhase(turnOwners: readonly TurnOwner[]): BattlePhase {
+  return {
+    phase: PHASES[0],
+    owner: turnOwners[0],
+    turn: TURNS[0],
+  };
+}
+
+function getTurnOwners(firstOwner: TurnOwner | null): readonly TurnOwner[] {
+  return firstOwner ? [firstOwner, getOtherTurnOwner(firstOwner)] : TURN_OWNERS;
+}
+
+function getOtherTurnOwner(owner: TurnOwner): TurnOwner {
+  return owner === "You" ? "Opponent" : "You";
+}
+
+function isFirstBattlePhase(
+  current: BattlePhase,
+  turnOwners: readonly TurnOwner[],
+) {
   return (
     current.turn === TURNS[0] &&
-    current.owner === TURN_OWNERS[0] &&
+    current.owner === turnOwners[0] &&
     current.phase === PHASES[0]
   );
 }
 
-function isLastBattlePhase(current: BattlePhase) {
+function isLastBattlePhase(
+  current: BattlePhase,
+  turnOwners: readonly TurnOwner[],
+) {
   return (
     current.turn === TURNS[TURNS.length - 1] &&
-    current.owner === TURN_OWNERS[TURN_OWNERS.length - 1] &&
+    current.owner === turnOwners[turnOwners.length - 1] &&
     current.phase === PHASES[PHASES.length - 1]
   );
 }
 
-function getPreviousBattlePhase(current: BattlePhase): BattlePhase {
+function getPreviousBattlePhase(
+  current: BattlePhase,
+  turnOwners: readonly TurnOwner[],
+): BattlePhase {
   if (current.phase !== PHASES[0]) {
     return {
       ...current,
@@ -355,18 +456,21 @@ function getPreviousBattlePhase(current: BattlePhase): BattlePhase {
     };
   }
 
-  const isFirstOwner = current.owner === TURN_OWNERS[0];
+  const isFirstOwner = current.owner === turnOwners[0];
 
   return {
     phase: PHASES[PHASES.length - 1],
     owner: isFirstOwner
-      ? TURN_OWNERS[TURN_OWNERS.length - 1]
-      : getPreviousTurnOwner(current.owner),
+      ? turnOwners[turnOwners.length - 1]
+      : getPreviousTurnOwner(current.owner, turnOwners),
     turn: isFirstOwner ? getPreviousTurn(current.turn) : current.turn,
   };
 }
 
-function getNextBattlePhase(current: BattlePhase): BattlePhase {
+function getNextBattlePhase(
+  current: BattlePhase,
+  turnOwners: readonly TurnOwner[],
+): BattlePhase {
   if (current.phase !== PHASES[PHASES.length - 1]) {
     return {
       ...current,
@@ -374,11 +478,11 @@ function getNextBattlePhase(current: BattlePhase): BattlePhase {
     };
   }
 
-  const isLastOwner = current.owner === TURN_OWNERS[TURN_OWNERS.length - 1];
+  const isLastOwner = current.owner === turnOwners[turnOwners.length - 1];
 
   return {
     phase: PHASES[0],
-    owner: isLastOwner ? TURN_OWNERS[0] : getNextTurnOwner(current.owner),
+    owner: isLastOwner ? turnOwners[0] : getNextTurnOwner(current.owner, turnOwners),
     turn: isLastOwner ? getNextTurn(current.turn) : current.turn,
   };
 }
@@ -397,20 +501,26 @@ function getNextTurn(currentTurn: Turn) {
   return TURNS[nextIndex];
 }
 
-function getPreviousTurnOwner(currentOwner: TurnOwner) {
-  const currentIndex = TURN_OWNERS.indexOf(currentOwner);
+function getPreviousTurnOwner(
+  currentOwner: TurnOwner,
+  turnOwners: readonly TurnOwner[],
+) {
+  const currentIndex = turnOwners.indexOf(currentOwner);
   const previousIndex =
-    currentIndex <= 0 ? TURN_OWNERS.length - 1 : currentIndex - 1;
+    currentIndex <= 0 ? turnOwners.length - 1 : currentIndex - 1;
 
-  return TURN_OWNERS[previousIndex];
+  return turnOwners[previousIndex];
 }
 
-function getNextTurnOwner(currentOwner: TurnOwner) {
-  const currentIndex = TURN_OWNERS.indexOf(currentOwner);
+function getNextTurnOwner(
+  currentOwner: TurnOwner,
+  turnOwners: readonly TurnOwner[],
+) {
+  const currentIndex = turnOwners.indexOf(currentOwner);
   const nextIndex =
-    currentIndex >= TURN_OWNERS.length - 1 ? 0 : currentIndex + 1;
+    currentIndex >= turnOwners.length - 1 ? 0 : currentIndex + 1;
 
-  return TURN_OWNERS[nextIndex];
+  return turnOwners[nextIndex];
 }
 
 function getPreviousPhase(currentPhase: Phase) {

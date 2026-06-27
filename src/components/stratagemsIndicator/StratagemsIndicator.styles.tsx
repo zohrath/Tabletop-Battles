@@ -1,5 +1,41 @@
 import styled from "@emotion/styled";
 
+export const StratagemsToggleButton = styled.button`
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  bottom: 112px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  position: fixed;
+  right: max(0px, calc((100vw - var(--app-max-width)) / 2));
+  width: 36px;
+  z-index: 15;
+
+  span {
+    border-block: 6px solid transparent;
+    border-left: 0;
+    border-right: 8px solid var(--text-h);
+    display: block;
+    height: 0;
+    width: 0;
+  }
+
+  &[aria-expanded="true"] span {
+    transform: rotate(180deg);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+`;
+
 export const StratagemsIndicatorPanel = styled.section`
   @keyframes stratagems-indicator-enter-left {
     0% {
@@ -52,17 +88,17 @@ export const StratagemsIndicatorPanel = styled.section`
   grid-auto-rows: var(--stratagem-icon-size);
   gap: 2vh;
   justify-content: center;
-  left: 0;
+  left: max(0px, calc((100vw - var(--app-max-width)) / 2));
   padding: 0;
   position: fixed;
-  bottom: 15svh;
+  bottom: 20vh;
   width: var(--stratagem-icon-size);
   z-index: 12;
 
   &[data-side="right"] {
     animation-name: stratagems-indicator-enter-right;
     left: auto;
-    right: 0;
+    right: max(0px, calc((100vw - var(--app-max-width)) / 2));
   }
 
   @media (prefers-reduced-motion: reduce) {

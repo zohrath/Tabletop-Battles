@@ -7,6 +7,15 @@ import shockBombardment from "../assets/shockBombardment.png";
 import lightOfVengeance from "../assets/lightOfVengeance.png";
 import heresyUndone from "../assets/heresyUndone.png";
 import commandReroll from "../assets/commandReroll.png";
+import epicChallenge from "../assets/epicChallenge.png";
+import insaneBravery from "../assets/insaneBravery.png";
+import grenade from "../assets/grenade.png";
+import crushingImpact from "../assets/crushingImpact.png";
+import rapidIngress from "../assets/rapidIngress.png";
+import fireOverwatch from "../assets/fireOverwatch.png";
+import smokescreen from "../assets/smokescreen.png";
+import heroicIntervention from "../assets/heroicIntervention.png";
+import counteroffensive from "../assets/counteroffensive.png";
 
 export const coreStratagems: Stratagem[] = [
   {
@@ -24,6 +33,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:epic-challenge",
     name: "Epic Challenge",
     cpCost: 1,
+    imageSrc: epicChallenge,
     phases: [Phase.Fight],
     source: "core",
     timing: "both",
@@ -34,6 +44,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:insane-bravery",
     name: "Insane Bravery",
     cpCost: 1,
+    imageSrc: insaneBravery,
     phases: [Phase.Command],
     source: "core",
     timing: "own-turn",
@@ -41,9 +52,10 @@ export const coreStratagems: Stratagem[] = [
       "Indifferent to their own survival, these warriors hold their ground against seemingly impossible odds.\n\nWHEN: Battle-shock step of your Command phase, just before you make a battle-shock roll for a friendly unit.\n\nTARGET: That unit.\n\nEFFECT: That battle-shock roll is automatically successful.\n\nRESTRICTIONS: You cannot use this stratagem more than once per battle.",
   },
   {
-    id: "core:explosives",
-    name: "Explosives",
+    id: "core:grenade",
+    name: "Grenade",
     cpCost: 1,
+    imageSrc: grenade,
     phases: [Phase.Shooting],
     source: "core",
     timing: "own-turn",
@@ -54,6 +66,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:crushing-impact",
     name: "Crushing Impact",
     cpCost: 1,
+    imageSrc: crushingImpact,
     phases: [Phase.Charge],
     source: "core",
     timing: "own-turn",
@@ -64,6 +77,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:rapid-ingress",
     name: "Rapid Ingress",
     cpCost: 1,
+    imageSrc: rapidIngress,
     phases: [Phase.Movement],
     source: "core",
     timing: "opponent-turn",
@@ -74,7 +88,8 @@ export const coreStratagems: Stratagem[] = [
     id: "core:fire-overwatch",
     name: "Fire Overwatch",
     cpCost: 1,
-    phases: [Phase.Movement],
+    imageSrc: fireOverwatch,
+    phases: [Phase.Movement, Phase.Charge],
     source: "core",
     timing: "opponent-turn",
     description:
@@ -84,6 +99,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:smokescreen",
     name: "Smokescreen",
     cpCost: 1,
+    imageSrc: smokescreen,
     phases: [Phase.Shooting],
     source: "core",
     timing: "opponent-turn",
@@ -94,6 +110,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:heroic-intervention",
     name: "Heroic Intervention",
     cpCost: 1,
+    imageSrc: heroicIntervention,
     phases: [Phase.Charge],
     source: "core",
     timing: "opponent-turn",
@@ -104,6 +121,7 @@ export const coreStratagems: Stratagem[] = [
     id: "core:counteroffensive",
     name: "Counteroffensive",
     cpCost: 2,
+    imageSrc: counteroffensive,
     phases: [Phase.Fight],
     source: "core",
     timing: "opponent-turn",

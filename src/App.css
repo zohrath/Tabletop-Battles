@@ -1,7 +1,7 @@
 .app-shell {
   box-sizing: border-box;
   min-height: 100svh;
-  padding: 32px;
+  padding: 32px 32px 128px;
   text-align: left;
 }
 
@@ -287,6 +287,46 @@
   color: #b42318;
 }
 
+.turn-owner-warning {
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 16px;
+}
+
+.first-turn-options {
+  border: 0;
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.first-turn-options legend {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.first-turn-options label {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  font-weight: 700;
+  padding: 12px;
+}
+
+.first-turn-options input {
+  accent-color: var(--accent);
+}
+
 .army-manager {
   display: grid;
   gap: 12px;
@@ -433,7 +473,7 @@
 
 @media (max-width: 640px) {
   .app-shell {
-    padding: 20px;
+    padding: 20px 20px 128px;
   }
 
   .toolbar {

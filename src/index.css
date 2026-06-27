@@ -10,6 +10,7 @@
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --app-max-width: 1126px;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -51,7 +52,7 @@
 }
 
 #root {
-  width: 1126px;
+  width: var(--app-max-width);
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
