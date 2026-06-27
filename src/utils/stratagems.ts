@@ -15,7 +15,7 @@ import rapidIngress from "../assets/rapidIngress.png";
 import fireOverwatch from "../assets/fireOverwatch.png";
 import smokescreen from "../assets/smokescreen.png";
 import heroicIntervention from "../assets/heroicIntervention.png";
-import counteroffensive from "../assets/counteroffensive.png";
+import counteroffensive from "../assets/counterOffensive.png";
 
 export const coreStratagems: Stratagem[] = [
   {
