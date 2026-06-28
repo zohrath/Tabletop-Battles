@@ -22,6 +22,7 @@ const neonAuthJwksUrl =
 const neonAuthJwks = neonAuthJwksUrl
   ? createRemoteJWKSet(new URL(neonAuthJwksUrl))
   : null;
+const builtInDetachmentIds = new Set(["bastion-task-force"]);
 const migrationsDirectory = fileURLToPath(
   new URL("../db/migrations", import.meta.url),
 );
@@ -516,10 +517,6 @@ async function handleDetachments(request, response) {
       : body.detachment
         ? [body.detachment]
         : [];
-
-    if (detachments.length === 0) {
-      throw httpError(400, "At least one detachment is required");
-    }
 
     for (const detachment of detachments) {
       await upsertDetachment(appUser.id, detachment);
@@ -1048,6 +1045,11 @@ async function getDetachmentsForUser(userId) {
 
 async function upsertDetachment(userId, detachment) {
   const normalizedDetachment = normalizeDetachmentPayload(detachment);
+
+  if (builtInDetachmentIds.has(normalizedDetachment.id)) {
+    return;
+  }
+
   const client = await pool.connect();
 
   try {

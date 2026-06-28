@@ -16,7 +16,7 @@ import { TURN_OWNERS, TURNS, type BattlePhase, type TurnOwner, type Turn } from 
 import { Phase } from "./types/Phase";
 import type { Stratagem, StratagemTiming } from "./types/Stratagem";
 import type { ArmyImported } from "./types/armyImported";
-import { apiRequest } from "./utils/api";
+import { apiRequest, isLocalApp } from "./utils/api";
 import { extractArmyRules, extractArmyUnits, type ArmyUnit } from "./utils/armyImported";
 import { getSelectedArmyRuleChoice } from "./utils/armyRules";
 import { bastionTaskForceStratagems, coreStratagems, getStratagemsForBattlePhase } from "./utils/stratagems";
@@ -443,6 +443,10 @@ function App() {
   }
 
   async function signUpWithNeon(email: string, password: string) {
+    if (!isLocalApp()) {
+      throw new Error("Account creation is only available locally.");
+    }
+
     if (!neonAuthClient) {
       throw new Error("Neon Auth is not configured.");
     }
@@ -652,7 +656,7 @@ function App() {
     }
 
     await apiRequest("/api/detachments", {
-      body: { detachments: nextDetachments },
+      body: { detachments: getCustomDetachments(nextDetachments) },
       method: "POST",
       token,
     }).catch(() => undefined);
@@ -934,6 +938,7 @@ function App() {
     return (
       <LoginPage
         neonAuthEnabled={neonAuthEnabled}
+        neonSignUpEnabled={isLocalApp()}
         onLocalLogin={login}
         onNeonLogin={loginWithNeon}
         onNeonSignUp={signUpWithNeon}
@@ -1882,6 +1887,12 @@ function mergeBuiltInDetachments(savedDetachments: DetachmentPack[]) {
     .map(normalizeDetachmentPack);
 
   return [...mergedBuiltIns, ...customDetachments];
+}
+
+function getCustomDetachments(detachments: DetachmentPack[]) {
+  return detachments.filter(
+    (detachment) => !BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id),
+  );
 }
 
 function cloneDetachmentPack(detachment: DetachmentPack): DetachmentPack {

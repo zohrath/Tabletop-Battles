@@ -4,12 +4,13 @@ type AuthProvider = "local" | "neon";
 
 type LoginPageProps = {
   neonAuthEnabled: boolean;
+  neonSignUpEnabled: boolean;
   onLocalLogin: (username: string, password: string) => Promise<void>;
   onNeonLogin: (email: string, password: string) => Promise<void>;
   onNeonSignUp: (email: string, password: string) => Promise<void>;
 };
 
-function LoginPage({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }: LoginPageProps) {
+function LoginPage({ neonAuthEnabled, neonSignUpEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }: LoginPageProps) {
   const [mode, setMode] = useState<AuthProvider>(neonAuthEnabled ? "neon" : "local");
   const [username, setUsername] = useState(neonAuthEnabled ? "" : "admin");
   const [password, setPassword] = useState("admin");
@@ -32,7 +33,7 @@ function LoginPage({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }:
             signUp: isSignUp && isNeonMode,
           });
           const submit = isNeonMode
-            ? isSignUp
+            ? isSignUp && neonSignUpEnabled
               ? onNeonSignUp(username, password)
               : onNeonLogin(username, password)
             : onLocalLogin(username, password);
@@ -95,14 +96,14 @@ function LoginPage({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }:
         {error && <p className="error-message">{error}</p>}
         <button disabled={isSubmitting} type="submit">
           {isSubmitting
-            ? isSignUp && isNeonMode
+            ? isSignUp && isNeonMode && neonSignUpEnabled
               ? "Creating..."
               : "Logging in..."
-            : isSignUp && isNeonMode
+            : isSignUp && isNeonMode && neonSignUpEnabled
               ? "Create Account"
               : "Log In"}
         </button>
-        {isNeonMode && (
+        {isNeonMode && neonSignUpEnabled && (
           <button
             className="login-link-button"
             onClick={() => {
