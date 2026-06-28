@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import "./App.css";
-import { getNeonAuthToken, neonAuthClient, neonAuthEnabled } from "./auth";
+import { getNeonAuthToken, neonAuthClient, neonAuthEnabled } from "./lib/auth";
 import { Header } from "./components/header/Header";
 import { Modal } from "./components/modal/Modal";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
@@ -145,8 +145,20 @@ function App() {
 
   const getApiAuthToken = useCallback(async () => {
     if (authProvider === "neon") {
-      return getNeonAuthToken();
+      const token = await getNeonAuthToken();
+
+      console.info("[auth] API token resolved", {
+        provider: authProvider,
+        tokenPresent: Boolean(token),
+      });
+
+      return token;
     }
+
+    console.info("[auth] API token resolved", {
+      provider: authProvider,
+      tokenPresent: Boolean(authToken),
+    });
 
     return authToken;
   }, [authProvider, authToken]);
@@ -184,8 +196,11 @@ function App() {
         const token = await getApiAuthToken();
 
         if (!token) {
+          console.info("[auth] Skipping army sync: no API token");
           return;
         }
+
+        console.info("[auth] Loading database armies");
 
         const [{ armies }, { preferences }] = await Promise.all([
           apiRequest<ArmyListsResponse>("/api/army-lists", {
@@ -259,8 +274,11 @@ function App() {
         const token = await getApiAuthToken();
 
         if (!token) {
+          console.info("[auth] Skipping detachment sync: no API token");
           return;
         }
+
+        console.info("[auth] Loading database detachments");
 
         const { detachments } = await apiRequest<DetachmentsResponse>("/api/detachments", {
           token,
@@ -312,6 +330,11 @@ function App() {
     let cancelled = false;
 
     async function checkSession() {
+      console.info("[auth] Checking session", {
+        hasStoredToken: Boolean(authToken),
+        neonAuthEnabled,
+      });
+
       if (authToken) {
         try {
           const { account } = await apiRequest<{ account: AuthAccount | LocalAuthAccount }>("/api/session", {
@@ -320,6 +343,9 @@ function App() {
 
           if (!cancelled) {
             const provider = "provider" in account ? account.provider : "local";
+            console.info("[auth] Existing API session accepted", {
+              provider,
+            });
             setAuthProvider(provider);
             setAuthAccount({ ...account, provider });
             setSessionStatus("logged-in");
@@ -338,6 +364,9 @@ function App() {
           const token = await getNeonAuthToken();
 
           if (!cancelled) {
+            console.info("[auth] Existing Neon session accepted", {
+              tokenPresent: Boolean(token),
+            });
             localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
             setAuthToken(token);
             setAuthProvider("neon");
@@ -349,6 +378,7 @@ function App() {
       }
 
       if (!cancelled) {
+        console.info("[auth] No existing session");
         localStorage.removeItem(AUTH_PROVIDER_STORAGE_KEY);
         setAuthAccount(null);
         setSessionStatus("logged-out");
@@ -363,9 +393,15 @@ function App() {
   }, [authToken]);
 
   async function login(username: string, password: string) {
+    console.info("[auth] Local login start");
     const result = await apiRequest<{ account: AuthAccount; token: string }>("/api/login", {
       body: { username, password },
       method: "POST",
+    });
+
+    console.info("[auth] Local login success", {
+      provider: result.account.provider ?? "local",
+      tokenPresent: Boolean(result.token),
     });
 
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, result.token);
@@ -381,6 +417,7 @@ function App() {
       throw new Error("Neon Auth is not configured.");
     }
 
+    console.info("[auth] Neon login start");
     const result = await neonAuthClient.signIn.email({ email, password });
 
     if (result.error) {
@@ -395,7 +432,11 @@ function App() {
 
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
-    setAuthToken(await getNeonAuthToken());
+    const token = await getNeonAuthToken();
+    console.info("[auth] Neon login success", {
+      tokenPresent: Boolean(token),
+    });
+    setAuthToken(token);
     setAuthProvider("neon");
     setAuthAccount(account);
     setSessionStatus("logged-in");
@@ -406,6 +447,7 @@ function App() {
       throw new Error("Neon Auth is not configured.");
     }
 
+    console.info("[auth] Neon sign-up start");
     const result = await neonAuthClient.signUp.email({
       email,
       name: email.split("@")[0] || "User",
@@ -424,7 +466,11 @@ function App() {
 
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
-    setAuthToken(await getNeonAuthToken());
+    const token = await getNeonAuthToken();
+    console.info("[auth] Neon sign-up success", {
+      tokenPresent: Boolean(token),
+    });
+    setAuthToken(token);
     setAuthProvider("neon");
     setAuthAccount(account);
     setSessionStatus("logged-in");

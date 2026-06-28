@@ -26,6 +26,11 @@ function LoginPage({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }:
           event.preventDefault();
           setError("");
           setIsSubmitting(true);
+          console.info("[auth] Login submit", {
+            mode,
+            neonAuthEnabled,
+            signUp: isSignUp && isNeonMode,
+          });
           const submit = isNeonMode
             ? isSignUp
               ? onNeonSignUp(username, password)

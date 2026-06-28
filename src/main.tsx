@@ -8,10 +8,16 @@ import { NeonAuthUIProvider } from "@neondatabase/neon-js/auth/react";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <NeonAuthUIProvider emailOTP authClient={authClient}>
+    {authClient ? (
+      <NeonAuthUIProvider emailOTP authClient={authClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </NeonAuthUIProvider>
+    ) : (
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </NeonAuthUIProvider>
+    )}
   </StrictMode>,
 );
