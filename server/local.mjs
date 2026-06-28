@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { createApiServer, handleApiRequest } from "../server/api.mjs";
+import { createApiServer } from "./api.mjs";
 
 const port = Number(process.env.API_PORT ?? 8787);
 const isDirectRun =
@@ -12,5 +12,3 @@ if (isDirectRun) {
     console.log(`Tabletop Battles API listening on http://localhost:${port}`);
   });
 }
-
-export default handleApiRequest;

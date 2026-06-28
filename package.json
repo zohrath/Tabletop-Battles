@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "api": "node api/server.mjs",
+    "api": "node server/local.mjs",
     "dev": "vite",
-    "dev:api": "node api/server.mjs",
+    "dev:api": "node server/local.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
