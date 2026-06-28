@@ -1,38 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import "./App.css";
 import { neonAuthClient, neonAuthEnabled } from "./auth";
-import { ArmyUnitList } from "./components/ArmyUnitList";
 import { Header } from "./components/header/Header";
 import { Modal } from "./components/modal/Modal";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
-import { StratagemsIndicator } from "./components/stratagemsIndicator/StratagemsIndicator";
-import { StratagemsToggleButton } from "./components/stratagemsIndicator/StratagemsIndicator.styles";
-import {
-  TURN_OWNERS,
-  TURNS,
-  type BattlePhase,
-  type TurnOwner,
-  type Turn,
-} from "./types/BattlePhase";
+import { Toolbar } from "./components/toolbar/Toolbar";
+import { AdminDatabasePage } from "./pages/AdminDatabasePage";
+import { ArmiesPage } from "./pages/ArmiesPage";
+import { ArmyRulePage } from "./pages/ArmyRulePage";
+import { BattlePage } from "./pages/BattlePage";
+import type { DetachmentPack, DetachmentStratagem, SavedArmy } from "./types/AppData";
+import type { AppPage } from "./types/AppPage";
+import { TURN_OWNERS, TURNS, type BattlePhase, type TurnOwner, type Turn } from "./types/BattlePhase";
 import { Phase } from "./types/Phase";
 import type { Stratagem, StratagemTiming } from "./types/Stratagem";
 import type { ArmyImported } from "./types/armyImported";
-import {
-  extractArmyRules,
-  extractArmyUnits,
-  type ArmyRule,
-  type ArmyUnit,
-} from "./utils/armyImported";
-import {
-  bastionTaskForceStratagems,
-  coreStratagems,
-  getStratagemsForBattlePhase,
-} from "./utils/stratagems";
-import {
-  getActiveWeapons,
-  getWeaponKey,
-  getWeaponKeywords,
-} from "./utils/weapon";
+import { apiRequest } from "./utils/api";
+import { extractArmyRules, extractArmyUnits, type ArmyUnit } from "./utils/armyImported";
+import { getSelectedArmyRuleChoice } from "./utils/armyRules";
+import { bastionTaskForceStratagems, coreStratagems, getStratagemsForBattlePhase } from "./utils/stratagems";
+import { getActiveWeapons, getWeaponKey, getWeaponKeywords } from "./utils/weapon";
 
 const SAVED_ARMIES_STORAGE_KEY = "tabletop-battles.saved-armies";
 const DETACHMENTS_STORAGE_KEY = "tabletop-battles.detachments";
@@ -40,40 +28,10 @@ const AUTH_TOKEN_STORAGE_KEY = "tabletop-battles.auth-token";
 const AUTH_PROVIDER_STORAGE_KEY = "tabletop-battles.auth-provider";
 const PHASES = Object.values(Phase) as Phase[];
 
-type AppPage = "battle" | "armies" | "armyRule" | "admin";
-
 const INITIAL_BATTLE_PHASE: BattlePhase = {
   phase: PHASES[0],
   owner: TURN_OWNERS[0],
   turn: TURNS[0],
-};
-
-type SavedArmy = {
-  id: string;
-  importedAt: string;
-  name: string;
-  selectedDetachmentId?: string;
-  selectedArmyRuleChoiceId?: string;
-  sourceFileName: string;
-  armyRules: ArmyRule[];
-  units: ArmyUnit[];
-};
-
-type DetachmentPack = {
-  id: string;
-  name: string;
-  detachmentRule: string;
-  enhancements: string;
-  stratagems: DetachmentStratagem[];
-};
-
-type DetachmentStratagem = {
-  id: string;
-  name: string;
-  cpCost: number;
-  description: string;
-  phases: Phase[] | "Any";
-  timing: StratagemTiming;
 };
 
 type WeaponKeywordTarget = {
@@ -98,14 +56,6 @@ type LocalAuthAccount = Omit<AuthAccount, "provider">;
 type AuthProvider = "local" | "neon";
 
 type SessionStatus = "checking" | "logged-in" | "logged-out";
-
-type AdminAccount = {
-  id: string;
-  username: string;
-  is_admin: boolean;
-  created_at: string;
-  updated_at: string;
-};
 
 type ArmyListsResponse = {
   armies: SavedArmy[];
@@ -144,63 +94,54 @@ const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
 ];
 
 function App() {
-  const [authToken, setAuthToken] = useState(
-    () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "",
-  );
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "");
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() =>
-    localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || neonAuthEnabled
-      ? "checking"
-      : "logged-out",
+    localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || neonAuthEnabled ? "checking" : "logged-out",
   );
   const [authProvider, setAuthProvider] = useState<AuthProvider>(() =>
-    localStorage.getItem(AUTH_PROVIDER_STORAGE_KEY) === "neon"
-      ? "neon"
-      : "local",
+    localStorage.getItem(AUTH_PROVIDER_STORAGE_KEY) === "neon" ? "neon" : "local",
   );
   const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
   const [savedArmies, setSavedArmies] = useState<SavedArmy[]>(loadSavedArmies);
-  const [detachmentPacks, setDetachmentPacks] =
-    useState<DetachmentPack[]>(loadDetachmentPacks);
-  const [activeArmyId, setActiveArmyId] = useState(
-    () => savedArmies[0]?.id ?? "",
-  );
-  const [page, setPage] = useState<AppPage>("battle");
+  const [detachmentPacks, setDetachmentPacks] = useState<DetachmentPack[]>(loadDetachmentPacks);
+  const [activeArmyId, setActiveArmyId] = useState(() => savedArmies[0]?.id ?? "");
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [firstTurnOwner, setFirstTurnOwner] = useState<TurnOwner | null>(null);
   const [firstTurnModalOpen, setFirstTurnModalOpen] = useState(false);
   const [detachmentEditorOpen, setDetachmentEditorOpen] = useState(false);
-  const [selectedDetachmentDetail, setSelectedDetachmentDetail] =
-    useState<DetachmentPack | null>(null);
+  const [selectedDetachmentDetail, setSelectedDetachmentDetail] = useState<DetachmentPack | null>(null);
   const [addAbilityUnitId, setAddAbilityUnitId] = useState<string | null>(null);
-  const [removeAbilityUnitId, setRemoveAbilityUnitId] = useState<string | null>(
-    null,
-  );
-  const [addWeaponKeywordTarget, setAddWeaponKeywordTarget] =
-    useState<WeaponKeywordTarget | null>(null);
-  const [removeWeaponKeywordTarget, setRemoveWeaponKeywordTarget] =
-    useState<WeaponKeywordTarget | null>(null);
-  const [stratagemsIndicatorOpen, setStratagemsIndicatorOpen] =
-    useState(false);
-  const [battlePhase, setBattlePhase] =
-    useState<BattlePhase>(INITIAL_BATTLE_PHASE);
+  const [removeAbilityUnitId, setRemoveAbilityUnitId] = useState<string | null>(null);
+  const [addWeaponKeywordTarget, setAddWeaponKeywordTarget] = useState<WeaponKeywordTarget | null>(null);
+  const [removeWeaponKeywordTarget, setRemoveWeaponKeywordTarget] = useState<WeaponKeywordTarget | null>(null);
+  const [stratagemsIndicatorOpen, setStratagemsIndicatorOpen] = useState(false);
+  const [battlePhase, setBattlePhase] = useState<BattlePhase>(INITIAL_BATTLE_PHASE);
 
-  const activeArmy =
-    savedArmies.find((army) => army.id === activeArmyId) ?? null;
+  const activeArmy = savedArmies.find((army) => army.id === activeArmyId) ?? null;
   const selectedDetachment =
-    detachmentPacks.find(
-      (detachment) => detachment.id === activeArmy?.selectedDetachmentId,
-    ) ?? null;
+    detachmentPacks.find((detachment) => detachment.id === activeArmy?.selectedDetachmentId) ?? null;
   const detachmentStratagems = getDetachmentStratagems(selectedDetachment);
   const turnOwners = getTurnOwners(firstTurnOwner);
-  const visibleCoreStratagems = getStratagemsForBattlePhase(
-    coreStratagems,
-    battlePhase,
-  );
-  const visibleDetachmentStratagems = getStratagemsForBattlePhase(
-    detachmentStratagems,
-    battlePhase,
-  );
+  const visibleCoreStratagems = getStratagemsForBattlePhase(coreStratagems, battlePhase);
+  const visibleDetachmentStratagems = getStratagemsForBattlePhase(detachmentStratagems, battlePhase);
+  const hasVisibleStratagems = visibleCoreStratagems.length > 0 || visibleDetachmentStratagems.length > 0;
+  const addAbilityUnit = getSavedUnit(activeArmy, addAbilityUnitId);
+  const removeAbilityUnit = getSavedUnit(activeArmy, removeAbilityUnitId);
+  const addWeaponKeywordUnit = getSavedUnit(activeArmy, addWeaponKeywordTarget?.unitId ?? null);
+  const removeWeaponKeywordUnit = getSavedUnit(activeArmy, removeWeaponKeywordTarget?.unitId ?? null);
+  const addWeaponKeywordName =
+    addWeaponKeywordUnit && addWeaponKeywordTarget
+      ? getWeaponName(addWeaponKeywordUnit, addWeaponKeywordTarget.weaponKey)
+      : "";
+  const removeWeaponKeywordNames =
+    removeWeaponKeywordUnit && removeWeaponKeywordTarget
+      ? getVisibleWeaponKeywordNames(removeWeaponKeywordUnit, removeWeaponKeywordTarget.weaponKey)
+      : [];
+  const currentPage = getAppPageFromPath(location.pathname, Boolean(authAccount?.isAdmin));
+
   const saveUserPreferencesToDatabase = useCallback(
     async (selectedArmyListId: string) => {
       if (sessionStatus !== "logged-in" || !authToken) {
@@ -242,11 +183,7 @@ function App() {
         if (normalizedArmies.length > 0) {
           setSavedArmies(normalizedArmies);
           setActiveArmyId((currentArmyId) =>
-            getPreferredArmyId(
-              normalizedArmies,
-              preferences.selectedArmyListId,
-              currentArmyId,
-            ),
+            getPreferredArmyId(normalizedArmies, preferences.selectedArmyListId, currentArmyId),
           );
           localStorage.removeItem(SAVED_ARMIES_STORAGE_KEY);
           return;
@@ -268,11 +205,7 @@ function App() {
         if (!cancelled) {
           setSavedArmies(importedArmies);
           setActiveArmyId((currentArmyId) => {
-            const selectedArmyId = getPreferredArmyId(
-              importedArmies,
-              preferences.selectedArmyListId,
-              currentArmyId,
-            );
+            const selectedArmyId = getPreferredArmyId(importedArmies, preferences.selectedArmyListId, currentArmyId);
 
             void saveUserPreferencesToDatabase(selectedArmyId);
             return selectedArmyId;
@@ -302,12 +235,9 @@ function App() {
 
     async function loadDatabaseDetachments() {
       try {
-        const { detachments } = await apiRequest<DetachmentsResponse>(
-          "/api/detachments",
-          {
-            token: authToken,
-          },
-        );
+        const { detachments } = await apiRequest<DetachmentsResponse>("/api/detachments", {
+          token: authToken,
+        });
         const normalizedDetachments = mergeBuiltInDetachments(detachments);
 
         if (cancelled) {
@@ -326,17 +256,12 @@ function App() {
           return;
         }
 
-        const imported = await apiRequest<DetachmentsResponse>(
-          "/api/detachments",
-          {
-            body: { detachments: localDetachments },
-            method: "POST",
-            token: authToken,
-          },
-        );
-        const importedDetachments = mergeBuiltInDetachments(
-          imported.detachments,
-        );
+        const imported = await apiRequest<DetachmentsResponse>("/api/detachments", {
+          body: { detachments: localDetachments },
+          method: "POST",
+          token: authToken,
+        });
+        const importedDetachments = mergeBuiltInDetachments(imported.detachments);
 
         if (!cancelled) {
           setDetachmentPacks(importedDetachments);
@@ -355,28 +280,6 @@ function App() {
       cancelled = true;
     };
   }, [authToken, sessionStatus]);
-  const hasVisibleStratagems =
-    visibleCoreStratagems.length > 0 || visibleDetachmentStratagems.length > 0;
-  const addAbilityUnit = getSavedUnit(activeArmy, addAbilityUnitId);
-  const removeAbilityUnit = getSavedUnit(activeArmy, removeAbilityUnitId);
-  const addWeaponKeywordUnit = getSavedUnit(
-    activeArmy,
-    addWeaponKeywordTarget?.unitId ?? null,
-  );
-  const removeWeaponKeywordUnit = getSavedUnit(
-    activeArmy,
-    removeWeaponKeywordTarget?.unitId ?? null,
-  );
-  const addWeaponKeywordName = addWeaponKeywordUnit && addWeaponKeywordTarget
-    ? getWeaponName(addWeaponKeywordUnit, addWeaponKeywordTarget.weaponKey)
-    : "";
-  const removeWeaponKeywordNames =
-    removeWeaponKeywordUnit && removeWeaponKeywordTarget
-      ? getVisibleWeaponKeywordNames(
-          removeWeaponKeywordUnit,
-          removeWeaponKeywordTarget.weaponKey,
-        )
-      : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -384,12 +287,9 @@ function App() {
     async function checkSession() {
       if (authToken) {
         try {
-          const { account } = await apiRequest<{ account: LocalAuthAccount }>(
-            "/api/session",
-            {
-              token: authToken,
-            },
-          );
+          const { account } = await apiRequest<{ account: LocalAuthAccount }>("/api/session", {
+            token: authToken,
+          });
 
           if (!cancelled) {
             setAuthProvider("local");
@@ -432,13 +332,10 @@ function App() {
   }, [authToken]);
 
   async function login(username: string, password: string) {
-    const result = await apiRequest<{ account: AuthAccount; token: string }>(
-      "/api/login",
-      {
-        body: { username, password },
-        method: "POST",
-      },
-    );
+    const result = await apiRequest<{ account: AuthAccount; token: string }>("/api/login", {
+      body: { username, password },
+      method: "POST",
+    });
 
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, result.token);
     localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "local");
@@ -547,7 +444,7 @@ function App() {
       updateSavedArmies((currentArmies) => [savedArmy, ...currentArmies]);
       setActiveArmyId(savedArmy.id);
       void saveUserPreferencesToDatabase(savedArmy.id);
-      setPage("battle");
+      navigate(getAppPagePath("battle"));
       setMenuOpen(false);
     } catch {
       setError("Could not read this roster JSON.");
@@ -581,10 +478,7 @@ function App() {
                 }
 
                 const currentCount = getModelCount(model.number);
-                const startingCount = getModelCount(
-                  model.startingNumber,
-                  currentCount,
-                );
+                const startingCount = getModelCount(model.startingNumber, currentCount);
 
                 return {
                   ...model,
@@ -599,23 +493,15 @@ function App() {
   }
 
   function renameArmy(armyId: string, name: string) {
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) =>
-        army.id === armyId ? { ...army, name } : army,
-      ),
-    );
+    updateSavedArmies((currentArmies) => currentArmies.map((army) => (army.id === armyId ? { ...army, name } : army)));
   }
 
   function deleteArmy(armyId: string) {
     const nextActiveArmyId =
-      armyId === activeArmyId
-        ? savedArmies.find((army) => army.id !== armyId)?.id ?? ""
-        : activeArmyId;
+      armyId === activeArmyId ? (savedArmies.find((army) => army.id !== armyId)?.id ?? "") : activeArmyId;
 
     void deleteSavedArmyFromDatabase(armyId);
-    updateSavedArmies((currentArmies) =>
-      currentArmies.filter((army) => army.id !== armyId),
-    );
+    updateSavedArmies((currentArmies) => currentArmies.filter((army) => army.id !== armyId));
 
     if (armyId === activeArmyId) {
       setActiveArmyId(nextActiveArmyId);
@@ -626,7 +512,7 @@ function App() {
   function openArmy(armyId: string) {
     setActiveArmyId(armyId);
     void saveUserPreferencesToDatabase(armyId);
-    setPage("battle");
+    navigate(getAppPagePath("battle"));
   }
 
   function chooseArmyRule(choiceId: string) {
@@ -635,26 +521,15 @@ function App() {
     }
 
     updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) =>
-        army.id === activeArmy.id
-          ? { ...army, selectedArmyRuleChoiceId: choiceId }
-          : army,
-      ),
+      currentArmies.map((army) => (army.id === activeArmy.id ? { ...army, selectedArmyRuleChoiceId: choiceId } : army)),
     );
   }
 
-  function updateDetachmentPacks(
-    getNextDetachments: (
-      currentDetachments: DetachmentPack[],
-    ) => DetachmentPack[],
-  ) {
+  function updateDetachmentPacks(getNextDetachments: (currentDetachments: DetachmentPack[]) => DetachmentPack[]) {
     setDetachmentPacks((currentDetachments) => {
       const nextDetachments = getNextDetachments(currentDetachments);
       if (!hasDatabaseSession(sessionStatus, authToken)) {
-        localStorage.setItem(
-          DETACHMENTS_STORAGE_KEY,
-          JSON.stringify(nextDetachments),
-        );
+        localStorage.setItem(DETACHMENTS_STORAGE_KEY, JSON.stringify(nextDetachments));
       }
       void syncDetachmentsToDatabase(nextDetachments);
       return nextDetachments;
@@ -711,16 +586,12 @@ function App() {
     }).catch(() => undefined);
   }
 
-  function updateActiveArmyUnitOverride(
-    unitId: string,
-    getNextUnit: (unit: ArmyUnit) => ArmyUnit,
-  ) {
+  function updateActiveArmyUnitOverride(unitId: string, getNextUnit: (unit: ArmyUnit) => ArmyUnit) {
     if (!activeArmy) {
       return null;
     }
 
-    const currentUnit =
-      activeArmy.units.find((unit) => unit.id === unitId) ?? null;
+    const currentUnit = activeArmy.units.find((unit) => unit.id === unitId) ?? null;
 
     if (!currentUnit) {
       return null;
@@ -734,9 +605,7 @@ function App() {
           army.id === activeArmy.id
             ? {
                 ...army,
-                units: army.units.map((unit) =>
-                  unit.id === unitId ? nextUnit : unit,
-                ),
+                units: army.units.map((unit) => (unit.id === unitId ? nextUnit : unit)),
               }
             : army,
         ),
@@ -747,11 +616,7 @@ function App() {
     return nextUnit;
   }
 
-  function changeAbilityDisplayName(
-    unitId: string,
-    abilityId: string,
-    displayName: string,
-  ) {
+  function changeAbilityDisplayName(unitId: string, abilityId: string, displayName: string) {
     updateActiveArmyUnitOverride(unitId, (unit) => ({
       ...unit,
       abilities: (unit.abilities ?? []).map((ability) =>
@@ -800,8 +665,7 @@ function App() {
 
     const unit = activeArmy.units.find((currentUnit) => currentUnit.id === unitId);
     const removedAbility = (unit?.abilities ?? []).find(
-      (ability) =>
-        normalizeName(ability.displayName || ability.name) === normalizeName(name),
+      (ability) => normalizeName(ability.displayName || ability.name) === normalizeName(name),
     );
 
     if (!removedAbility) {
@@ -811,9 +675,7 @@ function App() {
     updateActiveArmyUnitOverride(unitId, (currentUnit) => ({
       ...currentUnit,
       abilities: (currentUnit.abilities ?? []).filter(
-        (ability) =>
-          normalizeName(ability.displayName || ability.name) !==
-          normalizeName(name),
+        (ability) => normalizeName(ability.displayName || ability.name) !== normalizeName(name),
       ),
     }));
 
@@ -823,16 +685,11 @@ function App() {
     };
   }
 
-  function restoreUnitAbility(
-    unitId: string,
-    ability: ArmyUnit["abilities"][number],
-  ) {
+  function restoreUnitAbility(unitId: string, ability: ArmyUnit["abilities"][number]) {
     updateActiveArmyUnitOverride(unitId, (unit) => {
       const abilities = unit.abilities ?? [];
 
-      if (
-        abilities.some((currentAbility) => currentAbility.id === ability.id)
-      ) {
+      if (abilities.some((currentAbility) => currentAbility.id === ability.id)) {
         return unit;
       }
 
@@ -847,12 +704,7 @@ function App() {
     setAddWeaponKeywordTarget({ unitId, weaponKey });
   }
 
-  function saveWeaponKeyword(
-    unitId: string,
-    weaponKey: string,
-    name: string,
-    description: string,
-  ) {
+  function saveWeaponKeyword(unitId: string, weaponKey: string, name: string, description: string) {
     if (!name.trim()) {
       return;
     }
@@ -873,25 +725,17 @@ function App() {
     setRemoveWeaponKeywordTarget({ unitId, weaponKey });
   }
 
-  function deleteWeaponKeyword(
-    unitId: string,
-    weaponKey: string,
-    name: string,
-  ): ChipUndo | undefined {
+  function deleteWeaponKeyword(unitId: string, weaponKey: string, name: string): ChipUndo | undefined {
     if (!name.trim() || !activeArmy) {
       return undefined;
     }
 
     const unit = activeArmy.units.find((currentUnit) => currentUnit.id === unitId);
     const weapon = unit
-      ? getActiveWeapons(unit).find(
-          (currentWeapon) => getWeaponKey(currentWeapon) === weaponKey,
-        )
+      ? getActiveWeapons(unit).find((currentWeapon) => getWeaponKey(currentWeapon) === weaponKey)
       : null;
     const removedKeyword = weapon
-      ? getWeaponKeywords(weapon).find(
-          (keyword) => normalizeName(keyword.name) === normalizeName(name),
-        )
+      ? getWeaponKeywords(weapon).find((keyword) => normalizeName(keyword.name) === normalizeName(name))
       : null;
 
     if (!removedKeyword) {
@@ -900,11 +744,7 @@ function App() {
 
     updateActiveArmyUnitOverride(unitId, (unit) => ({
       ...unit,
-      weaponKeywordOverrides: removeWeaponKeywordOverride(
-        unit.weaponKeywordOverrides ?? [],
-        weaponKey,
-        name.trim(),
-      ),
+      weaponKeywordOverrides: removeWeaponKeywordOverride(unit.weaponKeywordOverrides ?? [], weaponKey, name.trim()),
     }));
 
     return {
@@ -917,18 +757,10 @@ function App() {
     };
   }
 
-  function restoreWeaponKeyword(
-    unitId: string,
-    weaponKey: string,
-    keyword: { description: string; name: string },
-  ) {
+  function restoreWeaponKeyword(unitId: string, weaponKey: string, keyword: { description: string; name: string }) {
     updateActiveArmyUnitOverride(unitId, (unit) => ({
       ...unit,
-      weaponKeywordOverrides: restoreWeaponKeywordOverride(
-        unit.weaponKeywordOverrides ?? [],
-        weaponKey,
-        keyword,
-      ),
+      weaponKeywordOverrides: restoreWeaponKeywordOverride(unit.weaponKeywordOverrides ?? [], weaponKey, keyword),
     }));
   }
 
@@ -939,10 +771,7 @@ function App() {
     setSavedArmies((currentArmies) => {
       const nextArmies = getNextArmies(currentArmies);
       if (!hasDatabaseSession(sessionStatus, authToken)) {
-        localStorage.setItem(
-          SAVED_ARMIES_STORAGE_KEY,
-          JSON.stringify(nextArmies),
-        );
+        localStorage.setItem(SAVED_ARMIES_STORAGE_KEY, JSON.stringify(nextArmies));
       }
       if (options.syncDatabase ?? true) {
         void syncSavedArmiesToDatabase(nextArmies);
@@ -979,16 +808,11 @@ function App() {
       return;
     }
 
-    await apiRequest(
-      `/api/army-lists/${encodeURIComponent(armyId)}/units/${encodeURIComponent(
-        unit.id,
-      )}/override`,
-      {
-        body: { override: getUnitOverridePayload(unit) },
-        method: "PUT",
-        token: authToken,
-      },
-    ).catch(() => undefined);
+    await apiRequest(`/api/army-lists/${encodeURIComponent(armyId)}/units/${encodeURIComponent(unit.id)}/override`, {
+      body: { override: getUnitOverridePayload(unit) },
+      method: "PUT",
+      token: authToken,
+    }).catch(() => undefined);
   }
 
   if (sessionStatus === "checking") {
@@ -1012,195 +836,69 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="toolbar">
-        <div>
-          <h1>
-            {page === "armies"
-              ? "Armies"
-              : page === "admin"
-                ? "Admin"
-                : activeArmy?.name || "Army Units"}
-          </h1>
-          <p>
-            {page === "armies"
-              ? `${savedArmies.length} saved armies`
-              : page === "admin"
-                ? `Logged in as ${authAccount?.username}`
-                : page === "armyRule"
-                ? getSelectedArmyRuleChoice(activeArmy)?.name ||
-                  "Choose an army rule"
-                : activeArmy?.sourceFileName ||
-                  "Choose a NewRecruit or BattleScribe roster JSON."}
-          </p>
-        </div>
-
-        <div className="app-menu">
-          <button
-            aria-controls="app-menu-panel"
-            aria-expanded={menuOpen}
-            aria-label="Open menu"
-            className="menu-button"
-            type="button"
-            onClick={() => setMenuOpen((isOpen) => !isOpen)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-
-          {menuOpen && (
-            <div className="menu-panel" id="app-menu-panel">
-              <button
-                className="menu-item"
-                type="button"
-                onClick={() => {
-                  setPage("armies");
-                  setMenuOpen(false);
-                }}
-              >
-                Armies
-              </button>
-              <button
-                className="menu-item"
-                disabled={!activeArmy}
-                type="button"
-                onClick={() => {
-                  setPage("battle");
-                  setMenuOpen(false);
-                }}
-              >
-                Current Army
-              </button>
-              <button
-                className="menu-item"
-                disabled={!activeArmy}
-                type="button"
-                onClick={() => {
-                  setPage("armyRule");
-                  setMenuOpen(false);
-                }}
-              >
-                Army Rule
-              </button>
-              <button
-                className="menu-item"
-                type="button"
-                onClick={() => {
-                  setFirstTurnModalOpen(true);
-                  setMenuOpen(false);
-                }}
-              >
-                First Turn
-              </button>
-              <button
-                className="menu-item"
-                type="button"
-                onClick={() => {
-                  setDetachmentEditorOpen(true);
-                  setMenuOpen(false);
-                }}
-              >
-                Detachments
-              </button>
-              {authAccount?.isAdmin && (
-                <button
-                  className="menu-item"
-                  type="button"
-                  onClick={() => {
-                    setPage("admin");
-                    setMenuOpen(false);
-                  }}
-                >
-                  Admin
-                </button>
-              )}
-              <label className="menu-item">
-                <input
-                  accept="application/json,.json"
-                  type="file"
-                  onChange={(event) =>
-                    void handleRosterFile(event.target.files?.[0])
-                  }
-                />
-                Import JSON
-              </label>
-              <button
-                className="menu-item"
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  void logout();
-                }}
-              >
-                Log Out
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
+      <Toolbar
+        activeArmyName={activeArmy?.name}
+        activeArmySourceFileName={activeArmy?.sourceFileName}
+        armyCount={savedArmies.length}
+        hasActiveArmy={Boolean(activeArmy)}
+        isAdmin={Boolean(authAccount?.isAdmin)}
+        menuOpen={menuOpen}
+        page={currentPage}
+        selectedArmyRuleChoiceName={getSelectedArmyRuleChoice(activeArmy)?.name}
+        setMenuOpen={setMenuOpen}
+        username={authAccount?.username}
+        onImportRoster={(file) => void handleRosterFile(file)}
+        onLogout={() => void logout()}
+        onNavigate={(nextPage) => navigate(getAppPagePath(nextPage))}
+        onOpenDetachmentEditor={() => setDetachmentEditorOpen(true)}
+        onOpenFirstTurnModal={() => setFirstTurnModalOpen(true)}
+      />
 
       {error && <p className="error-message">{error}</p>}
 
-      {page === "armies" ? (
-        <ArmyManager
-          activeArmyId={activeArmyId}
-          armies={savedArmies}
-          onDeleteArmy={deleteArmy}
-          onOpenArmy={openArmy}
-          onRenameArmy={renameArmy}
-        />
-      ) : page === "armyRule" ? (
-        <ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />
-      ) : page === "admin" ? (
-        <AdminDatabasePage authToken={authToken} />
-      ) : (
-        <>
-          {!firstTurnOwner && (
-            <p className="turn-owner-warning">Choose who started first turn.</p>
-          )}
-          {hasVisibleStratagems && (
-            <StratagemsToggleButton
-              aria-expanded={stratagemsIndicatorOpen}
-              aria-label={
-                stratagemsIndicatorOpen
-                  ? "Hide stratagems indicator"
-                  : "Show stratagems indicator"
-              }
-              type="button"
-              onClick={() => setStratagemsIndicatorOpen((isOpen) => !isOpen)}
-            >
-              <span aria-hidden="true" />
-            </StratagemsToggleButton>
-          )}
-          {stratagemsIndicatorOpen && visibleDetachmentStratagems.length > 0 && (
-            <StratagemsIndicator stratagems={visibleDetachmentStratagems} />
-          )}
-          {stratagemsIndicatorOpen && visibleCoreStratagems.length > 0 && (
-            <StratagemsIndicator
-              side="right"
-              stratagems={visibleCoreStratagems}
+      <Routes>
+        <Route path="/" element={<Navigate replace to="/battle" />} />
+        <Route
+          path="/armies"
+          element={
+            <ArmiesPage
+              activeArmyId={activeArmyId}
+              armies={savedArmies}
+              onDeleteArmy={deleteArmy}
+              onOpenArmy={openArmy}
+              onRenameArmy={renameArmy}
             />
-          )}
-          <SelectedArmyRuleBanner army={activeArmy} />
-          <SelectedDetachmentChip
-            detachment={selectedDetachment}
-            onOpen={() => {
-              if (selectedDetachment) {
-                setSelectedDetachmentDetail(selectedDetachment);
-              }
-            }}
-          />
-          <ArmyUnitList
-            onAddAbility={addUnitAbility}
-            onAddWeaponKeyword={addWeaponKeyword}
-            onAbilityDisplayNameChange={changeAbilityDisplayName}
-            onModelCountChange={changeModelCount}
-            onRemoveAbility={removeUnitAbility}
-            onRemoveWeaponKeyword={removeWeaponKeyword}
-            units={activeArmy?.units ?? []}
-          />
-        </>
-      )}
+          }
+        />
+        <Route path="/army-rule" element={<ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />} />
+        <Route
+          path="/admin"
+          element={authAccount?.isAdmin ? <AdminDatabasePage authToken={authToken} /> : <Navigate replace to="/battle" />}
+        />
+        <Route
+          path="/battle"
+          element={
+            <BattlePage
+              activeArmy={activeArmy}
+              firstTurnOwner={firstTurnOwner}
+              hasVisibleStratagems={hasVisibleStratagems}
+              selectedDetachment={selectedDetachment}
+              stratagemsIndicatorOpen={stratagemsIndicatorOpen}
+              visibleCoreStratagems={visibleCoreStratagems}
+              visibleDetachmentStratagems={visibleDetachmentStratagems}
+              onAbilityDisplayNameChange={changeAbilityDisplayName}
+              onAddAbility={addUnitAbility}
+              onAddWeaponKeyword={addWeaponKeyword}
+              onModelCountChange={changeModelCount}
+              onOpenDetachmentDetail={setSelectedDetachmentDetail}
+              onRemoveAbility={removeUnitAbility}
+              onRemoveWeaponKeyword={removeWeaponKeyword}
+              onToggleStratagemsIndicator={() => setStratagemsIndicatorOpen((isOpen) => !isOpen)}
+            />
+          }
+        />
+        <Route path="*" element={<Navigate replace to="/battle" />} />
+      </Routes>
       {firstTurnModalOpen && (
         <Modal
           ariaLabelledBy="first-turn-modal-title"
@@ -1228,10 +926,7 @@ function App() {
                     setFirstTurnOwner(owner);
                     setBattlePhase((current) => ({
                       ...current,
-                      owner:
-                        current.owner === TURN_OWNERS[0]
-                          ? owner
-                          : getOtherTurnOwner(owner),
+                      owner: current.owner === TURN_OWNERS[0] ? owner : getOtherTurnOwner(owner),
                     }));
                   }}
                 />
@@ -1268,11 +963,7 @@ function App() {
           ariaLabelledBy="detachment-detail-title"
           closeAriaLabel="Close detachment details"
           header={
-            <Header
-              title={selectedDetachmentDetail.name}
-              titleId="detachment-detail-title"
-              subtitle="Detachment"
-            />
+            <Header title={selectedDetachmentDetail.name} titleId="detachment-detail-title" subtitle="Detachment" />
           }
           maxWidth={640}
           onClose={() => setSelectedDetachmentDetail(null)}
@@ -1286,9 +977,7 @@ function App() {
           descriptionLabel="Ability description"
           itemType="Ability"
           onClose={() => setAddAbilityUnitId(null)}
-          onSubmit={(name, description) =>
-            saveUnitAbility(addAbilityUnit.id, name, description)
-          }
+          onSubmit={(name, description) => saveUnitAbility(addAbilityUnit.id, name, description)}
           subtitle={addAbilityUnit.name}
           title="Add Ability"
         />
@@ -1297,9 +986,7 @@ function App() {
         <RemoveChipModal
           closeAriaLabel="Close ability remover"
           emptyText="No abilities to remove."
-          itemNames={(removeAbilityUnit.abilities ?? []).map(
-            (ability) => ability.displayName || ability.name,
-          )}
+          itemNames={(removeAbilityUnit.abilities ?? []).map((ability) => ability.displayName || ability.name)}
           onClose={() => setRemoveAbilityUnitId(null)}
           onRemove={(name) => deleteUnitAbility(removeAbilityUnit.id, name)}
           subtitle={removeAbilityUnit.name}
@@ -1313,12 +1000,7 @@ function App() {
           itemType="Keyword"
           onClose={() => setAddWeaponKeywordTarget(null)}
           onSubmit={(name, description) =>
-            saveWeaponKeyword(
-              addWeaponKeywordTarget.unitId,
-              addWeaponKeywordTarget.weaponKey,
-              name,
-              description,
-            )
+            saveWeaponKeyword(addWeaponKeywordTarget.unitId, addWeaponKeywordTarget.weaponKey, name, description)
           }
           subtitle={`${addWeaponKeywordUnit.name} - ${addWeaponKeywordName}`}
           title="Add Keyword"
@@ -1331,11 +1013,7 @@ function App() {
           itemNames={removeWeaponKeywordNames}
           onClose={() => setRemoveWeaponKeywordTarget(null)}
           onRemove={(name) =>
-            deleteWeaponKeyword(
-              removeWeaponKeywordTarget.unitId,
-              removeWeaponKeywordTarget.weaponKey,
-              name,
-            )
+            deleteWeaponKeyword(removeWeaponKeywordTarget.unitId, removeWeaponKeywordTarget.weaponKey, name)
           }
           subtitle={`${removeWeaponKeywordUnit.name} - ${getWeaponName(
             removeWeaponKeywordUnit,
@@ -1351,16 +1029,12 @@ function App() {
         canReset={isLastBattlePhase(battlePhase, turnOwners)}
         onNextPhase={() =>
           setBattlePhase((current) =>
-            isLastBattlePhase(current, turnOwners)
-              ? current
-              : getNextBattlePhase(current, turnOwners),
+            isLastBattlePhase(current, turnOwners) ? current : getNextBattlePhase(current, turnOwners),
           )
         }
         onPreviousPhase={() =>
           setBattlePhase((current) =>
-            isFirstBattlePhase(current, turnOwners)
-              ? current
-              : getPreviousBattlePhase(current, turnOwners),
+            isFirstBattlePhase(current, turnOwners) ? current : getPreviousBattlePhase(current, turnOwners),
           )
         }
         onReset={() => setBattlePhase(getInitialBattlePhase(turnOwners))}
@@ -1376,15 +1050,8 @@ type LoginScreenProps = {
   onNeonSignUp: (email: string, password: string) => Promise<void>;
 };
 
-function LoginScreen({
-  neonAuthEnabled,
-  onLocalLogin,
-  onNeonLogin,
-  onNeonSignUp,
-}: LoginScreenProps) {
-  const [mode, setMode] = useState<AuthProvider>(
-    neonAuthEnabled ? "neon" : "local",
-  );
+function LoginScreen({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }: LoginScreenProps) {
+  const [mode, setMode] = useState<AuthProvider>(neonAuthEnabled ? "neon" : "local");
   const [username, setUsername] = useState(neonAuthEnabled ? "" : "admin");
   const [password, setPassword] = useState("admin");
   const [error, setError] = useState("");
@@ -1406,9 +1073,7 @@ function LoginScreen({
               : onNeonLogin(username, password)
             : onLocalLogin(username, password);
 
-          submit
-            .catch((loginError: Error) => setError(loginError.message))
-            .finally(() => setIsSubmitting(false));
+          submit.catch((loginError: Error) => setError(loginError.message)).finally(() => setIsSubmitting(false));
         }}
       >
         <div>
@@ -1482,194 +1147,11 @@ function LoginScreen({
             }}
             type="button"
           >
-            {isSignUp
-              ? "Already have a Neon account? Log in"
-              : "Need a Neon account? Create one"}
+            {isSignUp ? "Already have a Neon account? Log in" : "Need a Neon account? Create one"}
           </button>
         )}
       </form>
     </main>
-  );
-}
-
-function AdminDatabasePage({ authToken }: { authToken: string }) {
-  const [accounts, setAccounts] = useState<AdminAccount[]>([]);
-  const [error, setError] = useState("");
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newIsAdmin, setNewIsAdmin] = useState(false);
-  const isLocal = isLocalApp();
-
-  const loadAccounts = useCallback(async () => {
-    setError("");
-    try {
-      const result = await apiRequest<{ accounts: AdminAccount[] }>(
-        "/api/admin/accounts",
-        { token: authToken },
-      );
-      setAccounts(result.accounts);
-    } catch (loadError) {
-      setError((loadError as Error).message);
-    }
-  }, [authToken]);
-
-  useEffect(() => {
-    const loadTimer = window.setTimeout(() => {
-      void loadAccounts();
-    }, 0);
-
-    return () => window.clearTimeout(loadTimer);
-  }, [loadAccounts]);
-
-  async function createAccount() {
-    setError("");
-    try {
-      await apiRequest("/api/admin/accounts", {
-        body: {
-          username: newUsername,
-          password: newPassword,
-          isAdmin: newIsAdmin,
-        },
-        method: "POST",
-        token: authToken,
-      });
-      setNewUsername("");
-      setNewPassword("");
-      setNewIsAdmin(false);
-      await loadAccounts();
-    } catch (createError) {
-      setError((createError as Error).message);
-    }
-  }
-
-  async function updateAccount(account: AdminAccount, password: string) {
-    setError("");
-    try {
-      await apiRequest(`/api/admin/accounts/${account.id}`, {
-        body: {
-          username: account.username,
-          password,
-          isAdmin: account.is_admin,
-        },
-        method: "PUT",
-        token: authToken,
-      });
-      await loadAccounts();
-    } catch (updateError) {
-      setError((updateError as Error).message);
-    }
-  }
-
-  async function deleteAccount(accountId: string) {
-    setError("");
-    try {
-      await apiRequest(`/api/admin/accounts/${accountId}`, {
-        method: "DELETE",
-        token: authToken,
-      });
-      await loadAccounts();
-    } catch (deleteError) {
-      setError((deleteError as Error).message);
-    }
-  }
-
-  return (
-    <section className="admin-page" aria-label="Database admin">
-      {error && <p className="error-message">{error}</p>}
-      <article className="admin-card">
-        <h2>Accounts</h2>
-        {isLocal ? (
-          <div className="admin-create-row">
-            <input
-              placeholder="Username"
-              value={newUsername}
-              onChange={(event) => setNewUsername(event.target.value)}
-            />
-            <input
-              placeholder="Password"
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-            />
-            <label>
-              <input
-                checked={newIsAdmin}
-                type="checkbox"
-                onChange={(event) => setNewIsAdmin(event.target.checked)}
-              />
-              Admin
-            </label>
-            <button
-              disabled={!newUsername.trim() || !newPassword}
-              type="button"
-              onClick={() => void createAccount()}
-            >
-              Create
-            </button>
-          </div>
-        ) : (
-          <p className="admin-note">Account creation is only available locally.</p>
-        )}
-        <div className="admin-account-list">
-          {accounts.map((account) => (
-            <AdminAccountRow
-              account={account}
-              key={account.id}
-              onDelete={() => void deleteAccount(account.id)}
-              onSave={(nextAccount, password) =>
-                void updateAccount(nextAccount, password)
-              }
-            />
-          ))}
-        </div>
-      </article>
-    </section>
-  );
-}
-
-type AdminAccountRowProps = {
-  account: AdminAccount;
-  onDelete: () => void;
-  onSave: (account: AdminAccount, password: string) => void;
-};
-
-function AdminAccountRow({ account, onDelete, onSave }: AdminAccountRowProps) {
-  const [username, setUsername] = useState(account.username);
-  const [isAdmin, setIsAdmin] = useState(account.is_admin);
-  const [password, setPassword] = useState("");
-
-  return (
-    <article className="admin-account-row">
-      <input
-        value={username}
-        onChange={(event) => setUsername(event.target.value)}
-      />
-      <input
-        placeholder="New password"
-        type="password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-      />
-      <label>
-        <input
-          checked={isAdmin}
-          type="checkbox"
-          onChange={(event) => setIsAdmin(event.target.checked)}
-        />
-        Admin
-      </label>
-      <button
-        type="button"
-        onClick={() =>
-          onSave({ ...account, username, is_admin: isAdmin }, password)
-        }
-      >
-        Save
-      </button>
-      <button type="button" onClick={onDelete}>
-        Delete
-      </button>
-    </article>
   );
 }
 
@@ -1689,21 +1171,11 @@ function getOtherTurnOwner(owner: TurnOwner): TurnOwner {
   return owner === "You" ? "Opponent" : "You";
 }
 
-function isFirstBattlePhase(
-  current: BattlePhase,
-  turnOwners: readonly TurnOwner[],
-) {
-  return (
-    current.turn === TURNS[0] &&
-    current.owner === turnOwners[0] &&
-    current.phase === PHASES[0]
-  );
+function isFirstBattlePhase(current: BattlePhase, turnOwners: readonly TurnOwner[]) {
+  return current.turn === TURNS[0] && current.owner === turnOwners[0] && current.phase === PHASES[0];
 }
 
-function isLastBattlePhase(
-  current: BattlePhase,
-  turnOwners: readonly TurnOwner[],
-) {
+function isLastBattlePhase(current: BattlePhase, turnOwners: readonly TurnOwner[]) {
   return (
     current.turn === TURNS[TURNS.length - 1] &&
     current.owner === turnOwners[turnOwners.length - 1] &&
@@ -1711,10 +1183,7 @@ function isLastBattlePhase(
   );
 }
 
-function getPreviousBattlePhase(
-  current: BattlePhase,
-  turnOwners: readonly TurnOwner[],
-): BattlePhase {
+function getPreviousBattlePhase(current: BattlePhase, turnOwners: readonly TurnOwner[]): BattlePhase {
   if (current.phase !== PHASES[0]) {
     return {
       ...current,
@@ -1726,17 +1195,12 @@ function getPreviousBattlePhase(
 
   return {
     phase: PHASES[PHASES.length - 1],
-    owner: isFirstOwner
-      ? turnOwners[turnOwners.length - 1]
-      : getPreviousTurnOwner(current.owner, turnOwners),
+    owner: isFirstOwner ? turnOwners[turnOwners.length - 1] : getPreviousTurnOwner(current.owner, turnOwners),
     turn: isFirstOwner ? getPreviousTurn(current.turn) : current.turn,
   };
 }
 
-function getNextBattlePhase(
-  current: BattlePhase,
-  turnOwners: readonly TurnOwner[],
-): BattlePhase {
+function getNextBattlePhase(current: BattlePhase, turnOwners: readonly TurnOwner[]): BattlePhase {
   if (current.phase !== PHASES[PHASES.length - 1]) {
     return {
       ...current,
@@ -1767,32 +1231,23 @@ function getNextTurn(currentTurn: Turn) {
   return TURNS[nextIndex];
 }
 
-function getPreviousTurnOwner(
-  currentOwner: TurnOwner,
-  turnOwners: readonly TurnOwner[],
-) {
+function getPreviousTurnOwner(currentOwner: TurnOwner, turnOwners: readonly TurnOwner[]) {
   const currentIndex = turnOwners.indexOf(currentOwner);
-  const previousIndex =
-    currentIndex <= 0 ? turnOwners.length - 1 : currentIndex - 1;
+  const previousIndex = currentIndex <= 0 ? turnOwners.length - 1 : currentIndex - 1;
 
   return turnOwners[previousIndex];
 }
 
-function getNextTurnOwner(
-  currentOwner: TurnOwner,
-  turnOwners: readonly TurnOwner[],
-) {
+function getNextTurnOwner(currentOwner: TurnOwner, turnOwners: readonly TurnOwner[]) {
   const currentIndex = turnOwners.indexOf(currentOwner);
-  const nextIndex =
-    currentIndex >= turnOwners.length - 1 ? 0 : currentIndex + 1;
+  const nextIndex = currentIndex >= turnOwners.length - 1 ? 0 : currentIndex + 1;
 
   return turnOwners[nextIndex];
 }
 
 function getPreviousPhase(currentPhase: Phase) {
   const currentIndex = PHASES.indexOf(currentPhase);
-  const previousIndex =
-    currentIndex <= 0 ? PHASES.length - 1 : currentIndex - 1;
+  const previousIndex = currentIndex <= 0 ? PHASES.length - 1 : currentIndex - 1;
 
   return PHASES[previousIndex];
 }
@@ -1804,125 +1259,22 @@ function getNextPhase(currentPhase: Phase) {
   return PHASES[nextIndex];
 }
 
-type ArmyRulePageProps = {
-  army: SavedArmy | null;
-  onChooseArmyRule: (choiceId: string) => void;
-};
-
-function ArmyRulePage({ army, onChooseArmyRule }: ArmyRulePageProps) {
-  if (!army) {
-    return <p className="empty-state">Import or open an army first.</p>;
-  }
-
-  const rules = army.armyRules ?? [];
-  const choiceRules = rules.filter((rule) => rule.choices.length > 0);
-
-  if (rules.length === 0) {
-    return <p className="empty-state">No army rules found in this import.</p>;
-  }
-
-  return (
-    <section className="army-rule-page" aria-label="Army rule selection">
-      {choiceRules.length > 0
-        ? choiceRules.map((rule) => (
-            <article className="army-rule-card" key={rule.id}>
-              <h2>{rule.name}</h2>
-              <label>
-                <span>Chosen rule</span>
-                <select
-                  value={army.selectedArmyRuleChoiceId ?? ""}
-                  onChange={(event) => onChooseArmyRule(event.target.value)}
-                >
-                  <option value="">None selected</option>
-                  {rule.choices.map((choice) => (
-                    <option key={choice.id} value={choice.id}>
-                      {choice.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <SelectedArmyRuleDescription army={army} />
-            </article>
-          ))
-        : rules.map((rule) => (
-            <article className="army-rule-card" key={rule.id}>
-              <h2>{rule.name}</h2>
-              <p>{rule.description}</p>
-            </article>
-          ))}
-    </section>
-  );
-}
-
-function SelectedArmyRuleBanner({ army }: { army: SavedArmy | null }) {
-  const selectedChoice = getSelectedArmyRuleChoice(army);
-
-  if (!selectedChoice) {
-    return null;
-  }
-
-  return (
-    <section className="selected-army-rule">
-      <span>Army rule</span>
-      <strong>{selectedChoice.name}</strong>
-    </section>
-  );
-}
-
-function SelectedDetachmentChip({
-  detachment,
-  onOpen,
-}: {
-  detachment: DetachmentPack | null;
-  onOpen: () => void;
-}) {
-  if (!detachment) {
-    return null;
-  }
-
-  return (
-    <section className="selected-detachment">
-      <span>Detachment</span>
-      <ul className="weapon-keywords">
-        <li>
-          <button type="button" onClick={onOpen}>
-            {detachment.name}
-          </button>
-        </li>
-      </ul>
-    </section>
-  );
-}
-
 type DetachmentEditorProps = {
   activeArmy: SavedArmy | null;
   detachmentPacks: DetachmentPack[];
   onCancel: () => void;
-  onSave: (
-    detachmentPacks: DetachmentPack[],
-    selectedDetachmentId: string,
-    deletedDetachmentIds: string[],
-  ) => void;
+  onSave: (detachmentPacks: DetachmentPack[], selectedDetachmentId: string, deletedDetachmentIds: string[]) => void;
 };
 
-function DetachmentEditor({
-  activeArmy,
-  detachmentPacks,
-  onCancel,
-  onSave,
-}: DetachmentEditorProps) {
+function DetachmentEditor({ activeArmy, detachmentPacks, onCancel, onSave }: DetachmentEditorProps) {
   const [detachmentSelectorOpen, setDetachmentSelectorOpen] = useState(false);
-  const [draftDetachments, setDraftDetachments] = useState(() =>
-    detachmentPacks.map(cloneDetachmentPack),
-  );
+  const [draftDetachments, setDraftDetachments] = useState(() => detachmentPacks.map(cloneDetachmentPack));
   const [draftSelectedDetachmentId, setDraftSelectedDetachmentId] = useState(
     () => activeArmy?.selectedDetachmentId ?? "",
   );
   const [deletedDetachmentIds, setDeletedDetachmentIds] = useState<string[]>([]);
   const selectedDraftDetachment =
-    draftDetachments.find(
-      (detachment) => detachment.id === draftSelectedDetachmentId,
-    ) ?? null;
+    draftDetachments.find((detachment) => detachment.id === draftSelectedDetachmentId) ?? null;
 
   function createDraftDetachment() {
     const id = createId();
@@ -1941,9 +1293,7 @@ function DetachmentEditor({
 
   function updateDraftDetachment(nextDetachment: DetachmentPack) {
     setDraftDetachments((currentDetachments) =>
-      currentDetachments.map((detachment) =>
-        detachment.id === nextDetachment.id ? nextDetachment : detachment,
-      ),
+      currentDetachments.map((detachment) => (detachment.id === nextDetachment.id ? nextDetachment : detachment)),
     );
   }
 
@@ -1952,9 +1302,7 @@ function DetachmentEditor({
       currentDetachments.filter((detachment) => detachment.id !== detachmentId),
     );
     setDeletedDetachmentIds((currentIds) =>
-      currentIds.includes(detachmentId)
-        ? currentIds
-        : [...currentIds, detachmentId],
+      currentIds.includes(detachmentId) ? currentIds : [...currentIds, detachmentId],
     );
 
     if (draftSelectedDetachmentId === detachmentId) {
@@ -1973,17 +1321,10 @@ function DetachmentEditor({
           type="button"
           onClick={() => setDetachmentSelectorOpen((isOpen) => !isOpen)}
         >
-          {getDraftSelectedDetachmentName(
-            draftSelectedDetachmentId,
-            draftDetachments,
-          )}
+          {getDraftSelectedDetachmentName(draftSelectedDetachmentId, draftDetachments)}
         </button>
         {detachmentSelectorOpen && (
-          <div
-            aria-label="Current army detachment options"
-            className="detachment-option-list"
-            role="listbox"
-          >
+          <div aria-label="Current army detachment options" className="detachment-option-list" role="listbox">
             <button
               aria-selected={!activeArmy?.selectedDetachmentId}
               disabled={!activeArmy}
@@ -2039,11 +1380,7 @@ function DetachmentEditor({
         <button
           type="button"
           onClick={() =>
-            onSave(
-              draftDetachments.map(cloneDetachmentPack),
-              draftSelectedDetachmentId,
-              deletedDetachmentIds,
-            )
+            onSave(draftDetachments.map(cloneDetachmentPack), draftSelectedDetachmentId, deletedDetachmentIds)
           }
         >
           Save
@@ -2053,19 +1390,12 @@ function DetachmentEditor({
   );
 }
 
-function getDraftSelectedDetachmentName(
-  selectedDetachmentId: string,
-  detachmentPacks: DetachmentPack[],
-) {
+function getDraftSelectedDetachmentName(selectedDetachmentId: string, detachmentPacks: DetachmentPack[]) {
   if (!selectedDetachmentId) {
     return "None selected";
   }
 
-  return (
-    detachmentPacks.find(
-      (detachment) => detachment.id === selectedDetachmentId,
-    )?.name ?? "None selected"
-  );
+  return detachmentPacks.find((detachment) => detachment.id === selectedDetachmentId)?.name ?? "None selected";
 }
 
 type DetachmentEditorCardProps = {
@@ -2074,14 +1404,8 @@ type DetachmentEditorCardProps = {
   onUpdateDetachment: (detachment: DetachmentPack) => void;
 };
 
-function DetachmentEditorCard({
-  detachment,
-  onDeleteDetachment,
-  onUpdateDetachment,
-}: DetachmentEditorCardProps) {
-  const isBuiltIn = BUILT_IN_DETACHMENTS.some(
-    (builtInDetachment) => builtInDetachment.id === detachment.id,
-  );
+function DetachmentEditorCard({ detachment, onDeleteDetachment, onUpdateDetachment }: DetachmentEditorCardProps) {
+  const isBuiltIn = BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id);
 
   return (
     <article className="detachment-card">
@@ -2089,9 +1413,7 @@ function DetachmentEditorCard({
         <span>Name</span>
         <input
           value={detachment.name}
-          onChange={(event) =>
-            onUpdateDetachment({ ...detachment, name: event.target.value })
-          }
+          onChange={(event) => onUpdateDetachment({ ...detachment, name: event.target.value })}
         />
       </label>
       <label>
@@ -2152,18 +1474,14 @@ function DetachmentEditorCard({
             onDelete={() =>
               onUpdateDetachment({
                 ...detachment,
-                stratagems: detachment.stratagems.filter(
-                  (currentStratagem) => currentStratagem.id !== stratagem.id,
-                ),
+                stratagems: detachment.stratagems.filter((currentStratagem) => currentStratagem.id !== stratagem.id),
               })
             }
             onUpdate={(nextStratagem) =>
               onUpdateDetachment({
                 ...detachment,
                 stratagems: detachment.stratagems.map((currentStratagem) =>
-                  currentStratagem.id === nextStratagem.id
-                    ? nextStratagem
-                    : currentStratagem,
+                  currentStratagem.id === nextStratagem.id ? nextStratagem : currentStratagem,
                 ),
               })
             }
@@ -2172,11 +1490,7 @@ function DetachmentEditorCard({
       </div>
 
       {!isBuiltIn && (
-        <button
-          className="danger-button"
-          type="button"
-          onClick={() => onDeleteDetachment(detachment.id)}
-        >
+        <button className="danger-button" type="button" onClick={() => onDeleteDetachment(detachment.id)}>
           Delete Detachment
         </button>
       )}
@@ -2190,11 +1504,7 @@ type StratagemEditorCardProps = {
   onUpdate: (stratagem: DetachmentStratagem) => void;
 };
 
-function StratagemEditorCard({
-  stratagem,
-  onDelete,
-  onUpdate,
-}: StratagemEditorCardProps) {
+function StratagemEditorCard({ stratagem, onDelete, onUpdate }: StratagemEditorCardProps) {
   const selectedPhases = stratagem.phases === "Any" ? [] : stratagem.phases;
 
   return (
@@ -2202,12 +1512,7 @@ function StratagemEditorCard({
       <div className="stratagem-editor-grid">
         <label>
           <span>Name</span>
-          <input
-            value={stratagem.name}
-            onChange={(event) =>
-              onUpdate({ ...stratagem, name: event.target.value })
-            }
-          />
+          <input value={stratagem.name} onChange={(event) => onUpdate({ ...stratagem, name: event.target.value })} />
         </label>
         <label>
           <span>CP</span>
@@ -2282,9 +1587,7 @@ function StratagemEditorCard({
         <span>Stratagem Text</span>
         <textarea
           value={stratagem.description}
-          onChange={(event) =>
-            onUpdate({ ...stratagem, description: event.target.value })
-          }
+          onChange={(event) => onUpdate({ ...stratagem, description: event.target.value })}
         />
       </label>
       <button type="button" onClick={onDelete}>
@@ -2350,13 +1653,7 @@ function AddChipModal({
     <Modal
       ariaLabelledBy="chip-add-modal-title"
       closeAriaLabel={closeAriaLabel}
-      header={
-        <Header
-          title={title}
-          titleId="chip-add-modal-title"
-          subtitle={subtitle}
-        />
-      }
+      header={<Header title={title} titleId="chip-add-modal-title" subtitle={subtitle} />}
       maxWidth={520}
       onClose={onClose}
     >
@@ -2369,18 +1666,11 @@ function AddChipModal({
       >
         <label>
           <span>{itemType} name</span>
-          <input
-            autoFocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
+          <input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
         </label>
         <label>
           <span>{descriptionLabel}</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-          />
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
         <div className="chip-edit-actions">
           <button type="button" onClick={onClose}>
@@ -2421,13 +1711,7 @@ function RemoveChipModal({
     <Modal
       ariaLabelledBy="chip-remove-modal-title"
       closeAriaLabel={closeAriaLabel}
-      header={
-        <Header
-          title={title}
-          titleId="chip-remove-modal-title"
-          subtitle={subtitle}
-        />
-      }
+      header={<Header title={title} titleId="chip-remove-modal-title" subtitle={subtitle} />}
       maxWidth={520}
       onClose={onClose}
     >
@@ -2470,26 +1754,24 @@ function RemoveChipModal({
   );
 }
 
-function SelectedArmyRuleDescription({ army }: { army: SavedArmy }) {
-  const selectedChoice = getSelectedArmyRuleChoice(army);
-
-  if (!selectedChoice) {
-    return null;
-  }
-
-  return <p className="army-rule-description">{selectedChoice.description}</p>;
+function getAppPagePath(page: AppPage) {
+  return page === "armyRule" ? "/army-rule" : `/${page}`;
 }
 
-function getSelectedArmyRuleChoice(army: SavedArmy | null) {
-  if (!army?.selectedArmyRuleChoiceId) {
-    return null;
+function getAppPageFromPath(pathname: string, isAdmin: boolean): AppPage {
+  if (pathname === "/armies") {
+    return "armies";
   }
 
-  return (
-    army.armyRules
-      ?.flatMap((rule) => rule.choices)
-      .find((choice) => choice.id === army.selectedArmyRuleChoiceId) ?? null
-  );
+  if (pathname === "/army-rule") {
+    return "armyRule";
+  }
+
+  if (pathname === "/admin" && isAdmin) {
+    return "admin";
+  }
+
+  return "battle";
 }
 
 function getSavedUnit(army: SavedArmy | null, unitId: string | null) {
@@ -2501,16 +1783,11 @@ function getSavedUnit(army: SavedArmy | null, unitId: string | null) {
 }
 
 function getWeaponName(unit: ArmyUnit, weaponKey: string) {
-  return (
-    getActiveWeapons(unit).find((weapon) => getWeaponKey(weapon) === weaponKey)
-      ?.name ?? "Weapon"
-  );
+  return getActiveWeapons(unit).find((weapon) => getWeaponKey(weapon) === weaponKey)?.name ?? "Weapon";
 }
 
 function getVisibleWeaponKeywordNames(unit: ArmyUnit, weaponKey: string) {
-  const weapon = getActiveWeapons(unit).find(
-    (currentWeapon) => getWeaponKey(currentWeapon) === weaponKey,
-  );
+  const weapon = getActiveWeapons(unit).find((currentWeapon) => getWeaponKey(currentWeapon) === weaponKey);
 
   return weapon ? getWeaponKeywords(weapon).map((keyword) => keyword.name) : [];
 }
@@ -2532,64 +1809,10 @@ function getDetachmentStratagems(detachment: DetachmentPack | null): Stratagem[]
   }));
 }
 
-type ArmyManagerProps = {
-  activeArmyId: string;
-  armies: SavedArmy[];
-  onDeleteArmy: (armyId: string) => void;
-  onOpenArmy: (armyId: string) => void;
-  onRenameArmy: (armyId: string, name: string) => void;
-};
-
-function ArmyManager({
-  activeArmyId,
-  armies,
-  onDeleteArmy,
-  onOpenArmy,
-  onRenameArmy,
-}: ArmyManagerProps) {
-  if (armies.length === 0) {
-    return <p className="empty-state">No saved armies yet.</p>;
-  }
-
-  return (
-    <section className="army-manager" aria-label="Saved armies">
-      {armies.map((army) => (
-        <article className="army-manager-card" key={army.id}>
-          <div className="army-manager-card__body">
-            <label>
-              <span>Army name</span>
-              <input
-                value={army.name}
-                onChange={(event) => onRenameArmy(army.id, event.target.value)}
-              />
-            </label>
-            <p>
-              {army.units.length} units / imported{" "}
-              {new Date(army.importedAt).toLocaleDateString()}
-            </p>
-            {army.id === activeArmyId && <strong>Current army</strong>}
-          </div>
-
-          <div className="army-manager-card__actions">
-            <button type="button" onClick={() => onOpenArmy(army.id)}>
-              Open
-            </button>
-            <button type="button" onClick={() => onDeleteArmy(army.id)}>
-              Delete
-            </button>
-          </div>
-        </article>
-      ))}
-    </section>
-  );
-}
-
 function loadSavedArmies(): SavedArmy[] {
   try {
     const savedArmies = localStorage.getItem(SAVED_ARMIES_STORAGE_KEY);
-    const parsedArmies = savedArmies
-      ? (JSON.parse(savedArmies) as SavedArmy[])
-      : [];
+    const parsedArmies = savedArmies ? (JSON.parse(savedArmies) as SavedArmy[]) : [];
 
     return normalizeSavedArmies(parsedArmies);
   } catch {
@@ -2599,30 +1822,26 @@ function loadSavedArmies(): SavedArmy[] {
 
 function normalizeSavedArmies(armies: SavedArmy[]): SavedArmy[] {
   return armies.map((army) => ({
-      ...army,
-      armyRules: army.armyRules ?? [],
-      units: (army.units ?? []).map((unit) => ({
-        ...unit,
-        abilities: (unit.abilities ?? []).map((ability) => ({
+    ...army,
+    armyRules: army.armyRules ?? [],
+    units: (army.units ?? []).map((unit) => ({
+      ...unit,
+      abilities: (unit.abilities ?? [])
+        .map((ability) => ({
           ...ability,
           displayName: ability.displayName || undefined,
-        })).sort(compareSavedAbilities),
-        weaponKeywordOverrides: (unit.weaponKeywordOverrides ?? []).map(
-          (override) => ({
-            weaponKey: override.weaponKey,
-            added: override.added ?? [],
-            removed: override.removed ?? [],
-          }),
-        ),
+        }))
+        .sort(compareSavedAbilities),
+      weaponKeywordOverrides: (unit.weaponKeywordOverrides ?? []).map((override) => ({
+        weaponKey: override.weaponKey,
+        added: override.added ?? [],
+        removed: override.removed ?? [],
       })),
-    }));
+    })),
+  }));
 }
 
-function getPreferredArmyId(
-  armies: SavedArmy[],
-  preferredArmyId: string | null,
-  currentArmyId: string,
-) {
+function getPreferredArmyId(armies: SavedArmy[], preferredArmyId: string | null, currentArmyId: string) {
   if (preferredArmyId && armies.some((army) => army.id === preferredArmyId)) {
     return preferredArmyId;
   }
@@ -2648,9 +1867,7 @@ function getUnitOverridePayload(unit: ArmyUnit): UnitOverridePayload {
 function loadDetachmentPacks(): DetachmentPack[] {
   try {
     const savedDetachments = localStorage.getItem(DETACHMENTS_STORAGE_KEY);
-    const parsedDetachments = savedDetachments
-      ? (JSON.parse(savedDetachments) as DetachmentPack[])
-      : [];
+    const parsedDetachments = savedDetachments ? (JSON.parse(savedDetachments) as DetachmentPack[]) : [];
 
     return mergeBuiltInDetachments(parsedDetachments);
   } catch {
@@ -2659,19 +1876,12 @@ function loadDetachmentPacks(): DetachmentPack[] {
 }
 
 function mergeBuiltInDetachments(savedDetachments: DetachmentPack[]) {
-  const savedById = new Map(
-    savedDetachments.map((detachment) => [detachment.id, detachment]),
-  );
+  const savedById = new Map(savedDetachments.map((detachment) => [detachment.id, detachment]));
   const mergedBuiltIns = BUILT_IN_DETACHMENTS.map((detachment) =>
     normalizeDetachmentPack(savedById.get(detachment.id) ?? detachment),
   );
   const customDetachments = savedDetachments
-    .filter(
-      (detachment) =>
-        !BUILT_IN_DETACHMENTS.some(
-          (builtInDetachment) => builtInDetachment.id === detachment.id,
-        ),
-    )
+    .filter((detachment) => !BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id))
     .map(normalizeDetachmentPack);
 
   return [...mergedBuiltIns, ...customDetachments];
@@ -2694,15 +1904,13 @@ function normalizeDetachmentPack(detachment: DetachmentPack): DetachmentPack {
   };
 }
 
-function normalizeDetachmentStratagem(
-  stratagem: DetachmentStratagem,
-): DetachmentStratagem {
+function normalizeDetachmentStratagem(stratagem: DetachmentStratagem): DetachmentStratagem {
   return {
     id: stratagem.id || createId(),
     name: stratagem.name || "Unnamed Stratagem",
     cpCost: Number.isFinite(stratagem.cpCost) ? stratagem.cpCost : 1,
     description: stratagem.description ?? "",
-    phases: stratagem.phases === "Any" ? "Any" : stratagem.phases ?? "Any",
+    phases: stratagem.phases === "Any" ? "Any" : (stratagem.phases ?? "Any"),
     timing: stratagem.timing ?? "both",
   };
 }
@@ -2715,17 +1923,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getModelCount(
-  value: number | undefined,
-  fallback: number = 0,
-): number {
+function getModelCount(value: number | undefined, fallback: number = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function compareSavedAbilities(
-  first: ArmyUnit["abilities"][number],
-  second: ArmyUnit["abilities"][number],
-) {
+function compareSavedAbilities(first: ArmyUnit["abilities"][number], second: ArmyUnit["abilities"][number]) {
   const firstIsLeader = isSavedLeaderAbility(first);
   const secondIsLeader = isSavedLeaderAbility(second);
 
@@ -2746,9 +1948,7 @@ function upsertWeaponKeywordOverride(
   keywordName: string,
   description: string,
 ) {
-  const existingOverride = overrides.find(
-    (override) => override.weaponKey === weaponKey,
-  );
+  const existingOverride = overrides.find((override) => override.weaponKey === weaponKey);
   const nextKeyword = {
     id: createId(),
     name: keywordName,
@@ -2774,14 +1974,10 @@ function upsertWeaponKeywordOverride(
     return {
       ...override,
       added: [
-        ...override.added.filter(
-          (keyword) => normalizeName(keyword.name) !== normalizeName(keywordName),
-        ),
+        ...override.added.filter((keyword) => normalizeName(keyword.name) !== normalizeName(keywordName)),
         nextKeyword,
       ],
-      removed: override.removed.filter(
-        (keyword) => normalizeName(keyword) !== normalizeName(keywordName),
-      ),
+      removed: override.removed.filter((keyword) => normalizeName(keyword) !== normalizeName(keywordName)),
     };
   });
 }
@@ -2798,13 +1994,9 @@ function removeWeaponKeywordOverride(
 
     return {
       ...override,
-      added: override.added.filter(
-        (keyword) => normalizeName(keyword.name) !== normalizeName(keywordName),
-      ),
+      added: override.added.filter((keyword) => normalizeName(keyword.name) !== normalizeName(keywordName)),
       removed: [
-        ...override.removed.filter(
-          (keyword) => normalizeName(keyword) !== normalizeName(keywordName),
-        ),
+        ...override.removed.filter((keyword) => normalizeName(keyword) !== normalizeName(keywordName)),
         keywordName,
       ],
     };
@@ -2821,9 +2013,7 @@ function removeWeaponKeywordOverride(
     ];
   }
 
-  return nextOverrides.filter(
-    (override) => override.added.length > 0 || override.removed.length > 0,
-  );
+  return nextOverrides.filter((override) => override.added.length > 0 || override.removed.length > 0);
 }
 
 function restoreWeaponKeywordOverride(
@@ -2845,14 +2035,12 @@ function restoreWeaponKeywordOverride(
       ...override,
       added: [
         ...override.added.filter(
-          (currentKeyword) =>
-            normalizeName(currentKeyword.name) !== normalizeName(keyword.name),
+          (currentKeyword) => normalizeName(currentKeyword.name) !== normalizeName(keyword.name),
         ),
         nextKeyword,
       ],
       removed: override.removed.filter(
-        (currentKeyword) =>
-          normalizeName(currentKeyword) !== normalizeName(keyword.name),
+        (currentKeyword) => normalizeName(currentKeyword) !== normalizeName(keyword.name),
       ),
     };
   });
@@ -2868,48 +2056,11 @@ function restoreWeaponKeywordOverride(
     ];
   }
 
-  return nextOverrides.filter(
-    (override) => override.added.length > 0 || override.removed.length > 0,
-  );
+  return nextOverrides.filter((override) => override.added.length > 0 || override.removed.length > 0);
 }
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase();
-}
-
-type ApiOptions = {
-  body?: unknown;
-  method?: string;
-  token?: string;
-};
-
-async function apiRequest<T = unknown>(
-  path: string,
-  { body, method = "GET", token }: ApiOptions = {},
-): Promise<T> {
-  const response = await fetch(path, {
-    body: body ? JSON.stringify(body) : undefined,
-    headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    method,
-  });
-
-  const responseBody = response.status === 204 ? null : await response.json();
-
-  if (!response.ok) {
-    throw new Error(responseBody?.error ?? "Request failed");
-  }
-
-  return responseBody as T;
-}
-
-function isLocalApp() {
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  );
 }
 
 async function getNeonSessionAccount(): Promise<AuthAccount | null> {
