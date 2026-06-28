@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { SetStateAction } from "react";
 import type { ArmyUnit } from "../utils/armyImported";
 import type {
   ActiveWeapon,
@@ -140,37 +141,88 @@ export function ArmyUnitList({
           maxWidth={560}
           onClose={() => setSelectedKeyword(null)}
         >
-          {selectedKeyword.source === "ability" &&
-            selectedKeyword.unitId &&
-            selectedKeyword.abilityId && (
-              <KeywordEditor>
-                <span>Chip text</span>
-                <input
-                  value={selectedKeyword.displayName ?? selectedKeyword.name}
-                  onChange={(event) => {
-                    const displayName = event.target.value;
-
-                    onAbilityDisplayNameChange(
-                      selectedKeyword.unitId!,
-                      selectedKeyword.abilityId!,
-                      displayName,
-                    );
-                    setSelectedKeyword((currentKeyword) =>
-                      currentKeyword
-                        ? {
-                            ...currentKeyword,
-                            displayName,
-                          }
-                        : currentKeyword,
-                    );
-                  }}
-                />
-              </KeywordEditor>
-            )}
+          <KeywordDetailContent
+            key={`${selectedKeyword.unitId ?? ""}:${selectedKeyword.abilityId ?? ""}:${selectedKeyword.name}`}
+            selectedKeyword={selectedKeyword}
+            onAbilityDisplayNameChange={onAbilityDisplayNameChange}
+            onSelectedKeywordChange={setSelectedKeyword}
+          />
           <KeywordDescription>{selectedKeyword.description}</KeywordDescription>
         </Modal>
       )}
     </section>
+  );
+}
+
+type KeywordDetailContentProps = {
+  selectedKeyword: KeywordDetail;
+  onAbilityDisplayNameChange: (
+    unitId: string,
+    abilityId: string,
+    displayName: string,
+  ) => void;
+  onSelectedKeywordChange: (value: SetStateAction<KeywordDetail | null>) => void;
+};
+
+function KeywordDetailContent({
+  selectedKeyword,
+  onAbilityDisplayNameChange,
+  onSelectedKeywordChange,
+}: KeywordDetailContentProps) {
+  const [draftDisplayName, setDraftDisplayName] = useState(
+    selectedKeyword.displayName ?? selectedKeyword.name,
+  );
+
+  if (
+    selectedKeyword.source !== "ability" ||
+    !selectedKeyword.unitId ||
+    !selectedKeyword.abilityId
+  ) {
+    return null;
+  }
+
+  return (
+    <>
+      <KeywordEditor>
+        <span>Chip text</span>
+        <input
+          value={draftDisplayName}
+          onChange={(event) => setDraftDisplayName(event.target.value)}
+        />
+      </KeywordEditor>
+      <div className="modal-footer">
+        <button
+          type="button"
+          onClick={() =>
+            setDraftDisplayName(
+              selectedKeyword.displayName ?? selectedKeyword.name,
+            )
+          }
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onAbilityDisplayNameChange(
+              selectedKeyword.unitId!,
+              selectedKeyword.abilityId!,
+              draftDisplayName,
+            );
+            onSelectedKeywordChange((currentKeyword) =>
+              currentKeyword
+                ? {
+                    ...currentKeyword,
+                    displayName: draftDisplayName,
+                  }
+                : currentKeyword,
+            );
+          }}
+        >
+          Save
+        </button>
+      </div>
+    </>
   );
 }
 

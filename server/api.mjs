@@ -71,6 +71,19 @@ export async function handleApiRequest(request, response) {
       return;
     }
 
+    const unitOverrideMatch = url.pathname.match(
+      /^\/api\/army-lists\/([^/]+)\/units\/([^/]+)\/override$/,
+    );
+    if (unitOverrideMatch) {
+      await handleArmyListUnitOverride(
+        request,
+        response,
+        decodeURIComponent(unitOverrideMatch[1]),
+        decodeURIComponent(unitOverrideMatch[2]),
+      );
+      return;
+    }
+
     const armyListMatch = url.pathname.match(/^\/api\/army-lists\/([^/]+)$/);
     if (armyListMatch) {
       await handleArmyList(request, response, armyListMatch[1]);
@@ -380,15 +393,8 @@ async function handleArmyLists(request, response) {
   const appUser = await requireAppUser(request);
 
   if (request.method === "GET") {
-    const result = await pool.query(
-      `select roster_json
-       from army_lists
-       where user_id = $1
-       order by imported_at desc, created_at desc`,
-      [appUser.id],
-    );
     sendJson(response, 200, {
-      armies: result.rows.map((row) => row.roster_json),
+      armies: await getArmyListsForUser(appUser.id),
     });
     return;
   }
@@ -409,15 +415,8 @@ async function handleArmyLists(request, response) {
       await upsertArmyList(appUser.id, army);
     }
 
-    const result = await pool.query(
-      `select roster_json
-       from army_lists
-       where user_id = $1
-       order by imported_at desc, created_at desc`,
-      [appUser.id],
-    );
     sendJson(response, 200, {
-      armies: result.rows.map((row) => row.roster_json),
+      armies: await getArmyListsForUser(appUser.id),
     });
     return;
   }
@@ -432,18 +431,13 @@ async function handleArmyList(request, response, armyListId) {
     const body = await readJson(request);
     await upsertArmyList(appUser.id, body.army);
 
-    const result = await pool.query(
-      `select roster_json
-       from army_lists
-       where id = $1 and user_id = $2`,
-      [armyListId, appUser.id],
-    );
+    const army = await getArmyListForUser(appUser.id, armyListId);
 
-    if (result.rowCount === 0) {
+    if (!army) {
       throw httpError(404, "Army list not found");
     }
 
-    sendJson(response, 200, { army: result.rows[0].roster_json });
+    sendJson(response, 200, { army });
     return;
   }
 
@@ -452,6 +446,35 @@ async function handleArmyList(request, response, armyListId) {
       armyListId,
       appUser.id,
     ]);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
+async function handleArmyListUnitOverride(
+  request,
+  response,
+  armyListId,
+  sourceUnitId,
+) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "PUT") {
+    const body = await readJson(request);
+    await upsertArmyListUnitOverride(
+      appUser.id,
+      armyListId,
+      sourceUnitId,
+      body.override,
+    );
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (request.method === "DELETE") {
+    await deleteArmyListUnitOverride(appUser.id, armyListId, sourceUnitId);
     sendJson(response, 200, { ok: true });
     return;
   }
@@ -604,6 +627,7 @@ async function requireAppUser(request) {
 
 async function upsertArmyList(userId, army) {
   const normalizedArmy = normalizeArmyListPayload(army);
+  const storedArmy = stripArmyListOverrides(normalizedArmy);
   const client = await pool.connect();
 
   try {
@@ -618,9 +642,9 @@ async function upsertArmyList(userId, army) {
           imported_at,
           selected_detachment_id,
           selected_army_rule_choice_id,
-          roster_json
+         roster_json
         )
-       values ($1, $2, $3, $4, $5, null, $6, $7)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (id)
        do update set
          name = excluded.name,
@@ -635,11 +659,12 @@ async function upsertArmyList(userId, army) {
       [
         normalizedArmy.id,
         userId,
-        normalizedArmy.name,
-        normalizedArmy.sourceFileName,
-        normalizedArmy.importedAt,
-        normalizedArmy.selectedArmyRuleChoiceId ?? null,
-        normalizedArmy,
+        storedArmy.name,
+        storedArmy.sourceFileName,
+        storedArmy.importedAt,
+        storedArmy.selectedDetachmentId ?? null,
+        storedArmy.selectedArmyRuleChoiceId ?? null,
+        storedArmy,
       ],
     );
 
@@ -647,27 +672,47 @@ async function upsertArmyList(userId, army) {
       throw httpError(409, "Army list id already exists for another user");
     }
 
-    await client.query(
-      `delete from army_list_units
-       using army_lists
-       where army_list_units.army_list_id = army_lists.id
-         and army_lists.id = $1
-         and army_lists.user_id = $2`,
-      [normalizedArmy.id, userId],
-    );
+    const sourceUnitIds = storedArmy.units.map((unit) => String(unit.id));
+
+    if (sourceUnitIds.length > 0) {
+      await client.query(
+        `delete from army_list_units
+         where army_list_id = $1
+           and not (source_unit_id = any($2::text[]))`,
+        [storedArmy.id, sourceUnitIds],
+      );
+    } else {
+      await client.query("delete from army_list_units where army_list_id = $1", [
+        storedArmy.id,
+      ]);
+    }
 
     for (const unit of normalizedArmy.units) {
-      await client.query(
+      const storedUnit = stripUnitOverrides(unit);
+      const unitResult = await client.query(
         `insert into army_list_units
           (id, army_list_id, source_unit_id, name, unit_json)
-         values ($1, $2, $3, $4, $5)`,
+         values ($1, $2, $3, $4, $5)
+         on conflict (army_list_id, source_unit_id)
+         do update set
+           name = excluded.name,
+           unit_json = excluded.unit_json,
+           updated_at = now()
+         returning id`,
         [
           randomUUID(),
-          normalizedArmy.id,
-          String(unit.id),
-          String(unit.name || "Unnamed Unit"),
-          unit,
+          storedArmy.id,
+          String(storedUnit.id),
+          String(storedUnit.name || "Unnamed Unit"),
+          storedUnit,
         ],
+      );
+
+      await upsertArmyListUnitOverrideWithClient(
+        client,
+        storedArmy.id,
+        unitResult.rows[0].id,
+        getUnitOverridePayload(unit),
       );
     }
 
@@ -678,6 +723,126 @@ async function upsertArmyList(userId, army) {
   } finally {
     client.release();
   }
+}
+
+async function getArmyListsForUser(userId) {
+  const result = await pool.query(
+    `select roster_json
+     from army_lists
+     where user_id = $1
+     order by imported_at desc, created_at desc`,
+    [userId],
+  );
+
+  return Promise.all(
+    result.rows.map((row) => applyArmyListUnitOverrides(row.roster_json)),
+  );
+}
+
+async function getArmyListForUser(userId, armyListId) {
+  const result = await pool.query(
+    `select roster_json
+     from army_lists
+     where id = $1 and user_id = $2`,
+    [armyListId, userId],
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return applyArmyListUnitOverrides(result.rows[0].roster_json);
+}
+
+async function applyArmyListUnitOverrides(army) {
+  const result = await pool.query(
+    `select army_list_units.source_unit_id, army_list_unit_overrides.override_json
+     from army_list_unit_overrides
+     join army_list_units
+       on army_list_units.id = army_list_unit_overrides.army_list_unit_id
+     where army_list_unit_overrides.army_list_id = $1`,
+    [army.id],
+  );
+  const overridesByUnitId = new Map(
+    result.rows.map((row) => [String(row.source_unit_id), row.override_json]),
+  );
+
+  return {
+    ...army,
+    units: (army.units ?? []).map((unit) =>
+      applyUnitOverride(unit, overridesByUnitId.get(String(unit.id))),
+    ),
+  };
+}
+
+async function upsertArmyListUnitOverride(
+  userId,
+  armyListId,
+  sourceUnitId,
+  override,
+) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    const unitResult = await client.query(
+      `select army_list_units.id
+       from army_list_units
+       join army_lists on army_lists.id = army_list_units.army_list_id
+       where army_lists.id = $1
+         and army_lists.user_id = $2
+         and army_list_units.source_unit_id = $3`,
+      [armyListId, userId, sourceUnitId],
+    );
+
+    if (unitResult.rowCount === 0) {
+      throw httpError(404, "Army list unit not found");
+    }
+
+    await upsertArmyListUnitOverrideWithClient(
+      client,
+      armyListId,
+      unitResult.rows[0].id,
+      normalizeUnitOverridePayload(override),
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function upsertArmyListUnitOverrideWithClient(
+  client,
+  armyListId,
+  armyListUnitId,
+  override,
+) {
+  const normalizedOverride = normalizeUnitOverridePayload(override);
+
+  await client.query(
+    `insert into army_list_unit_overrides
+      (id, army_list_id, army_list_unit_id, override_json)
+     values ($1, $2, $3, $4)
+     on conflict (army_list_id, army_list_unit_id)
+     do update set override_json = excluded.override_json, updated_at = now()`,
+    [randomUUID(), armyListId, armyListUnitId, normalizedOverride],
+  );
+}
+
+async function deleteArmyListUnitOverride(userId, armyListId, sourceUnitId) {
+  await pool.query(
+    `delete from army_list_unit_overrides
+     using army_list_units, army_lists
+     where army_list_unit_overrides.army_list_unit_id = army_list_units.id
+       and army_list_unit_overrides.army_list_id = army_lists.id
+       and army_lists.id = $1
+       and army_lists.user_id = $2
+       and army_list_units.source_unit_id = $3`,
+    [armyListId, userId, sourceUnitId],
+  );
 }
 
 async function getDetachmentsForUser(userId) {
@@ -831,6 +996,108 @@ function normalizeArmyListPayload(army) {
     selectedDetachmentId: army.selectedDetachmentId || undefined,
     sourceFileName: String(army.sourceFileName ?? ""),
     units: Array.isArray(army.units) ? army.units : [],
+  };
+}
+
+function stripArmyListOverrides(army) {
+  return {
+    ...army,
+    units: army.units.map(stripUnitOverrides),
+  };
+}
+
+function stripUnitOverrides(unit) {
+  return {
+    ...unit,
+    abilities: (unit.abilities ?? [])
+      .filter((ability) => !ability.userAdded)
+      .map((ability) => {
+        const { displayName, userAdded, ...storedAbility } = ability;
+        void displayName;
+        void userAdded;
+        return storedAbility;
+      }),
+    weaponKeywordOverrides: undefined,
+  };
+}
+
+function getUnitOverridePayload(unit) {
+  return normalizeUnitOverridePayload({
+    abilities: unit.abilities ?? [],
+    weaponKeywordOverrides: unit.weaponKeywordOverrides ?? [],
+  });
+}
+
+function applyUnitOverride(unit, override) {
+  if (!override) {
+    return unit;
+  }
+
+  return {
+    ...unit,
+    abilities: Array.isArray(override.abilities)
+      ? override.abilities
+      : unit.abilities ?? [],
+    weaponKeywordOverrides: Array.isArray(override.weaponKeywordOverrides)
+      ? override.weaponKeywordOverrides
+      : [],
+  };
+}
+
+function normalizeUnitOverridePayload(override) {
+  const normalizedOverride =
+    override && typeof override === "object" ? override : {};
+
+  return {
+    abilities: Array.isArray(normalizedOverride.abilities)
+      ? normalizedOverride.abilities.map(normalizeUnitAbilityPayload)
+      : [],
+    weaponKeywordOverrides: Array.isArray(
+      normalizedOverride.weaponKeywordOverrides,
+    )
+      ? normalizedOverride.weaponKeywordOverrides.map(
+          normalizeWeaponKeywordOverridePayload,
+        )
+      : [],
+  };
+}
+
+function normalizeUnitAbilityPayload(ability) {
+  const normalizedAbility = ability && typeof ability === "object" ? ability : {};
+
+  return {
+    id: String(normalizedAbility.id ?? randomUUID()),
+    name: String(normalizedAbility.name ?? "").trim() || "Unnamed Ability",
+    displayName: normalizedAbility.displayName
+      ? String(normalizedAbility.displayName).trim()
+      : undefined,
+    description: String(normalizedAbility.description ?? ""),
+    userAdded: Boolean(normalizedAbility.userAdded),
+  };
+}
+
+function normalizeWeaponKeywordOverridePayload(override) {
+  const normalizedOverride =
+    override && typeof override === "object" ? override : {};
+
+  return {
+    weaponKey: String(normalizedOverride.weaponKey ?? ""),
+    added: Array.isArray(normalizedOverride.added)
+      ? normalizedOverride.added.map(normalizeWeaponKeywordPayload)
+      : [],
+    removed: Array.isArray(normalizedOverride.removed)
+      ? normalizedOverride.removed.map((keyword) => String(keyword))
+      : [],
+  };
+}
+
+function normalizeWeaponKeywordPayload(keyword) {
+  const normalizedKeyword = keyword && typeof keyword === "object" ? keyword : {};
+
+  return {
+    id: String(normalizedKeyword.id ?? randomUUID()),
+    name: String(normalizedKeyword.name ?? "").trim() || "Unnamed Keyword",
+    description: String(normalizedKeyword.description ?? ""),
   };
 }
 

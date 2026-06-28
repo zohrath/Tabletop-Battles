@@ -115,6 +115,11 @@ type DetachmentsResponse = {
   detachments: DetachmentPack[];
 };
 
+type UnitOverridePayload = {
+  abilities: ArmyUnit["abilities"];
+  weaponKeywordOverrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>;
+};
+
 const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
   {
     id: "bastion-task-force",
@@ -681,43 +686,58 @@ function App() {
     }).catch(() => undefined);
   }
 
+  function updateActiveArmyUnitOverride(
+    unitId: string,
+    getNextUnit: (unit: ArmyUnit) => ArmyUnit,
+  ) {
+    if (!activeArmy) {
+      return null;
+    }
+
+    const currentUnit =
+      activeArmy.units.find((unit) => unit.id === unitId) ?? null;
+
+    if (!currentUnit) {
+      return null;
+    }
+
+    const nextUnit = getNextUnit(currentUnit);
+
+    updateSavedArmies(
+      (currentArmies) =>
+        currentArmies.map((army) =>
+          army.id === activeArmy.id
+            ? {
+                ...army,
+                units: army.units.map((unit) =>
+                  unit.id === unitId ? nextUnit : unit,
+                ),
+              }
+            : army,
+        ),
+      { syncDatabase: false },
+    );
+    void saveUnitOverrideToDatabase(activeArmy.id, nextUnit);
+
+    return nextUnit;
+  }
+
   function changeAbilityDisplayName(
     unitId: string,
     abilityId: string,
     displayName: string,
   ) {
-    if (!activeArmy) {
-      return;
-    }
-
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((unit) => {
-            if (unit.id !== unitId) {
-              return unit;
+    updateActiveArmyUnitOverride(unitId, (unit) => ({
+      ...unit,
+      abilities: (unit.abilities ?? []).map((ability) =>
+        ability.id === abilityId
+          ? {
+              ...ability,
+              displayName: displayName.trim() || undefined,
             }
-
-            return {
-              ...unit,
-              abilities: (unit.abilities ?? []).map((ability) =>
-                ability.id === abilityId
-                  ? {
-                      ...ability,
-                      displayName: displayName.trim() || undefined,
-                    }
-                  : ability,
-              ),
-            };
-          }),
-        };
-      }),
-    );
+          : ability,
+      ),
+    }));
   }
 
   function addUnitAbility(unitId: string) {
@@ -725,37 +745,22 @@ function App() {
   }
 
   function saveUnitAbility(unitId: string, name: string, description: string) {
-    if (!name.trim() || !activeArmy) {
+    if (!name.trim()) {
       return;
     }
 
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((unit) =>
-            unit.id === unitId
-              ? {
-                  ...unit,
-                  abilities: [
-                    ...(unit.abilities ?? []),
-                    {
-                      id: createId(),
-                      name: name.trim(),
-                      description: description.trim(),
-                      userAdded: true,
-                    },
-                  ],
-                }
-              : unit,
-          ),
-        };
-      }),
-    );
+    updateActiveArmyUnitOverride(unitId, (unit) => ({
+      ...unit,
+      abilities: [
+        ...(unit.abilities ?? []),
+        {
+          id: createId(),
+          name: name.trim(),
+          description: description.trim(),
+          userAdded: true,
+        },
+      ].sort(compareSavedAbilities),
+    }));
     setAddAbilityUnitId(null);
   }
 
@@ -778,29 +783,14 @@ function App() {
       return undefined;
     }
 
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((currentUnit) =>
-            currentUnit.id === unitId
-              ? {
-                  ...currentUnit,
-                  abilities: (currentUnit.abilities ?? []).filter(
-                    (ability) =>
-                      normalizeName(ability.displayName || ability.name) !==
-                      normalizeName(name),
-                  ),
-                }
-              : currentUnit,
-          ),
-        };
-      }),
-    );
+    updateActiveArmyUnitOverride(unitId, (currentUnit) => ({
+      ...currentUnit,
+      abilities: (currentUnit.abilities ?? []).filter(
+        (ability) =>
+          normalizeName(ability.displayName || ability.name) !==
+          normalizeName(name),
+      ),
+    }));
 
     return {
       label: removedAbility.displayName || removedAbility.name,
@@ -812,41 +802,20 @@ function App() {
     unitId: string,
     ability: ArmyUnit["abilities"][number],
   ) {
-    if (!activeArmy) {
-      return;
-    }
+    updateActiveArmyUnitOverride(unitId, (unit) => {
+      const abilities = unit.abilities ?? [];
 
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
+      if (
+        abilities.some((currentAbility) => currentAbility.id === ability.id)
+      ) {
+        return unit;
+      }
 
-        return {
-          ...army,
-          units: army.units.map((unit) => {
-            if (unit.id !== unitId) {
-              return unit;
-            }
-
-            const abilities = unit.abilities ?? [];
-
-            if (
-              abilities.some(
-                (currentAbility) => currentAbility.id === ability.id,
-              )
-            ) {
-              return unit;
-            }
-
-            return {
-              ...unit,
-              abilities: [...abilities, ability].sort(compareSavedAbilities),
-            };
-          }),
-        };
-      }),
-    );
+      return {
+        ...unit,
+        abilities: [...abilities, ability].sort(compareSavedAbilities),
+      };
+    });
   }
 
   function addWeaponKeyword(unitId: string, weaponKey: string) {
@@ -859,34 +828,19 @@ function App() {
     name: string,
     description: string,
   ) {
-    if (!name.trim() || !activeArmy) {
+    if (!name.trim()) {
       return;
     }
 
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((unit) =>
-            unit.id === unitId
-              ? {
-                  ...unit,
-                  weaponKeywordOverrides: upsertWeaponKeywordOverride(
-                    unit.weaponKeywordOverrides ?? [],
-                    weaponKey,
-                    name.trim(),
-                    description.trim(),
-                  ),
-                }
-              : unit,
-          ),
-        };
-      }),
-    );
+    updateActiveArmyUnitOverride(unitId, (unit) => ({
+      ...unit,
+      weaponKeywordOverrides: upsertWeaponKeywordOverride(
+        unit.weaponKeywordOverrides ?? [],
+        weaponKey,
+        name.trim(),
+        description.trim(),
+      ),
+    }));
     setAddWeaponKeywordTarget(null);
   }
 
@@ -919,29 +873,14 @@ function App() {
       return undefined;
     }
 
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((unit) =>
-            unit.id === unitId
-              ? {
-                  ...unit,
-                  weaponKeywordOverrides: removeWeaponKeywordOverride(
-                    unit.weaponKeywordOverrides ?? [],
-                    weaponKey,
-                    name.trim(),
-                  ),
-                }
-              : unit,
-          ),
-        };
-      }),
-    );
+    updateActiveArmyUnitOverride(unitId, (unit) => ({
+      ...unit,
+      weaponKeywordOverrides: removeWeaponKeywordOverride(
+        unit.weaponKeywordOverrides ?? [],
+        weaponKey,
+        name.trim(),
+      ),
+    }));
 
     return {
       label: removedKeyword.name,
@@ -958,37 +897,19 @@ function App() {
     weaponKey: string,
     keyword: { description: string; name: string },
   ) {
-    if (!activeArmy) {
-      return;
-    }
-
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) => {
-        if (army.id !== activeArmy.id) {
-          return army;
-        }
-
-        return {
-          ...army,
-          units: army.units.map((unit) =>
-            unit.id === unitId
-              ? {
-                  ...unit,
-                  weaponKeywordOverrides: restoreWeaponKeywordOverride(
-                    unit.weaponKeywordOverrides ?? [],
-                    weaponKey,
-                    keyword,
-                  ),
-                }
-              : unit,
-          ),
-        };
-      }),
-    );
+    updateActiveArmyUnitOverride(unitId, (unit) => ({
+      ...unit,
+      weaponKeywordOverrides: restoreWeaponKeywordOverride(
+        unit.weaponKeywordOverrides ?? [],
+        weaponKey,
+        keyword,
+      ),
+    }));
   }
 
   function updateSavedArmies(
     getNextArmies: (currentArmies: SavedArmy[]) => SavedArmy[],
+    options: { syncDatabase?: boolean } = {},
   ) {
     setSavedArmies((currentArmies) => {
       const nextArmies = getNextArmies(currentArmies);
@@ -996,7 +917,9 @@ function App() {
         SAVED_ARMIES_STORAGE_KEY,
         JSON.stringify(nextArmies),
       );
-      void syncSavedArmiesToDatabase(nextArmies);
+      if (options.syncDatabase ?? true) {
+        void syncSavedArmiesToDatabase(nextArmies);
+      }
       return nextArmies;
     });
   }
@@ -1022,6 +945,23 @@ function App() {
       method: "DELETE",
       token: authToken,
     }).catch(() => undefined);
+  }
+
+  async function saveUnitOverrideToDatabase(armyId: string, unit: ArmyUnit) {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    await apiRequest(
+      `/api/army-lists/${encodeURIComponent(armyId)}/units/${encodeURIComponent(
+        unit.id,
+      )}/override`,
+      {
+        body: { override: getUnitOverridePayload(unit) },
+        method: "PUT",
+        token: authToken,
+      },
+    ).catch(() => undefined);
   }
 
   if (sessionStatus === "checking") {
@@ -2649,6 +2589,13 @@ function normalizeSavedArmies(armies: SavedArmy[]): SavedArmy[] {
         ),
       })),
     }));
+}
+
+function getUnitOverridePayload(unit: ArmyUnit): UnitOverridePayload {
+  return {
+    abilities: unit.abilities ?? [],
+    weaponKeywordOverrides: unit.weaponKeywordOverrides ?? [],
+  };
 }
 
 function loadDetachmentPacks(): DetachmentPack[] {
