@@ -65,6 +65,11 @@ export async function handleApiRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/preferences") {
+      await handlePreferences(request, response);
+      return;
+    }
+
     const detachmentMatch = url.pathname.match(/^\/api\/detachments\/([^/]+)$/);
     if (detachmentMatch) {
       await handleDetachment(request, response, detachmentMatch[1]);
@@ -541,6 +546,33 @@ async function handleDetachment(request, response, detachmentId) {
   sendJson(response, 405, { error: "Method not allowed" });
 }
 
+async function handlePreferences(request, response) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "GET") {
+    sendJson(response, 200, {
+      preferences: await getUserPreferences(appUser.id),
+    });
+    return;
+  }
+
+  if (request.method === "PUT") {
+    const body = await readJson(request);
+    const selectedArmyListId =
+      body.selectedArmyListId === null || body.selectedArmyListId === undefined
+        ? null
+        : String(body.selectedArmyListId);
+
+    await updateUserPreferences(appUser.id, selectedArmyListId);
+    sendJson(response, 200, {
+      preferences: await getUserPreferences(appUser.id),
+    });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
 async function handleDatabaseStatus(request, response) {
   await requireAdmin(request);
 
@@ -842,6 +874,45 @@ async function deleteArmyListUnitOverride(userId, armyListId, sourceUnitId) {
        and army_lists.user_id = $2
        and army_list_units.source_unit_id = $3`,
     [armyListId, userId, sourceUnitId],
+  );
+}
+
+async function getUserPreferences(userId) {
+  const result = await pool.query(
+    `select user_preferences.selected_army_list_id
+     from user_preferences
+     left join army_lists
+       on army_lists.id = user_preferences.selected_army_list_id
+      and army_lists.user_id = user_preferences.user_id
+     where user_preferences.user_id = $1`,
+    [userId],
+  );
+
+  return {
+    selectedArmyListId: result.rows[0]?.selected_army_list_id ?? null,
+  };
+}
+
+async function updateUserPreferences(userId, selectedArmyListId) {
+  if (selectedArmyListId) {
+    const armyResult = await pool.query(
+      "select id from army_lists where id = $1 and user_id = $2",
+      [selectedArmyListId, userId],
+    );
+
+    if (armyResult.rowCount === 0) {
+      throw httpError(404, "Army list not found");
+    }
+  }
+
+  await pool.query(
+    `insert into user_preferences (user_id, selected_army_list_id)
+     values ($1, $2)
+     on conflict (user_id)
+     do update set
+       selected_army_list_id = excluded.selected_army_list_id,
+       updated_at = now()`,
+    [userId, selectedArmyListId || null],
   );
 }
 

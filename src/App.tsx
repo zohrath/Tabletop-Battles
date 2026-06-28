@@ -115,6 +115,12 @@ type DetachmentsResponse = {
   detachments: DetachmentPack[];
 };
 
+type UserPreferencesResponse = {
+  preferences: {
+    selectedArmyListId: string | null;
+  };
+};
+
 type UnitOverridePayload = {
   abilities: ArmyUnit["abilities"];
   weaponKeywordOverrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>;
@@ -195,6 +201,20 @@ function App() {
     detachmentStratagems,
     battlePhase,
   );
+  const saveUserPreferencesToDatabase = useCallback(
+    async (selectedArmyListId: string) => {
+      if (sessionStatus !== "logged-in" || !authToken) {
+        return;
+      }
+
+      await apiRequest("/api/preferences", {
+        body: { selectedArmyListId: selectedArmyListId || null },
+        method: "PUT",
+        token: authToken,
+      }).catch(() => undefined);
+    },
+    [authToken, sessionStatus],
+  );
 
   useEffect(() => {
     if (sessionStatus !== "logged-in" || !authToken) {
@@ -205,12 +225,14 @@ function App() {
 
     async function loadDatabaseArmies() {
       try {
-        const { armies } = await apiRequest<ArmyListsResponse>(
-          "/api/army-lists",
-          {
+        const [{ armies }, { preferences }] = await Promise.all([
+          apiRequest<ArmyListsResponse>("/api/army-lists", {
             token: authToken,
-          },
-        );
+          }),
+          apiRequest<UserPreferencesResponse>("/api/preferences", {
+            token: authToken,
+          }),
+        ]);
         const normalizedArmies = normalizeSavedArmies(armies);
 
         if (cancelled) {
@@ -219,15 +241,14 @@ function App() {
 
         if (normalizedArmies.length > 0) {
           setSavedArmies(normalizedArmies);
-          localStorage.setItem(
-            SAVED_ARMIES_STORAGE_KEY,
-            JSON.stringify(normalizedArmies),
-          );
           setActiveArmyId((currentArmyId) =>
-            normalizedArmies.some((army) => army.id === currentArmyId)
-              ? currentArmyId
-              : normalizedArmies[0]?.id ?? "",
+            getPreferredArmyId(
+              normalizedArmies,
+              preferences.selectedArmyListId,
+              currentArmyId,
+            ),
           );
+          localStorage.removeItem(SAVED_ARMIES_STORAGE_KEY);
           return;
         }
 
@@ -246,15 +267,17 @@ function App() {
 
         if (!cancelled) {
           setSavedArmies(importedArmies);
-          localStorage.setItem(
-            SAVED_ARMIES_STORAGE_KEY,
-            JSON.stringify(importedArmies),
-          );
-          setActiveArmyId((currentArmyId) =>
-            importedArmies.some((army) => army.id === currentArmyId)
-              ? currentArmyId
-              : importedArmies[0]?.id ?? "",
-          );
+          setActiveArmyId((currentArmyId) => {
+            const selectedArmyId = getPreferredArmyId(
+              importedArmies,
+              preferences.selectedArmyListId,
+              currentArmyId,
+            );
+
+            void saveUserPreferencesToDatabase(selectedArmyId);
+            return selectedArmyId;
+          });
+          localStorage.removeItem(SAVED_ARMIES_STORAGE_KEY);
         }
       } catch {
         if (!cancelled) {
@@ -268,7 +291,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, sessionStatus]);
+  }, [authToken, saveUserPreferencesToDatabase, sessionStatus]);
 
   useEffect(() => {
     if (sessionStatus !== "logged-in" || !authToken) {
@@ -293,10 +316,7 @@ function App() {
 
         if (detachments.length > 0) {
           setDetachmentPacks(normalizedDetachments);
-          localStorage.setItem(
-            DETACHMENTS_STORAGE_KEY,
-            JSON.stringify(normalizedDetachments),
-          );
+          localStorage.removeItem(DETACHMENTS_STORAGE_KEY);
           return;
         }
 
@@ -320,10 +340,7 @@ function App() {
 
         if (!cancelled) {
           setDetachmentPacks(importedDetachments);
-          localStorage.setItem(
-            DETACHMENTS_STORAGE_KEY,
-            JSON.stringify(importedDetachments),
-          );
+          localStorage.removeItem(DETACHMENTS_STORAGE_KEY);
         }
       } catch {
         if (!cancelled) {
@@ -529,6 +546,7 @@ function App() {
 
       updateSavedArmies((currentArmies) => [savedArmy, ...currentArmies]);
       setActiveArmyId(savedArmy.id);
+      void saveUserPreferencesToDatabase(savedArmy.id);
       setPage("battle");
       setMenuOpen(false);
     } catch {
@@ -589,20 +607,25 @@ function App() {
   }
 
   function deleteArmy(armyId: string) {
+    const nextActiveArmyId =
+      armyId === activeArmyId
+        ? savedArmies.find((army) => army.id !== armyId)?.id ?? ""
+        : activeArmyId;
+
     void deleteSavedArmyFromDatabase(armyId);
-    updateSavedArmies((currentArmies) => {
-      const nextArmies = currentArmies.filter((army) => army.id !== armyId);
+    updateSavedArmies((currentArmies) =>
+      currentArmies.filter((army) => army.id !== armyId),
+    );
 
-      if (armyId === activeArmyId) {
-        setActiveArmyId(nextArmies[0]?.id ?? "");
-      }
-
-      return nextArmies;
-    });
+    if (armyId === activeArmyId) {
+      setActiveArmyId(nextActiveArmyId);
+      void saveUserPreferencesToDatabase(nextActiveArmyId);
+    }
   }
 
   function openArmy(armyId: string) {
     setActiveArmyId(armyId);
+    void saveUserPreferencesToDatabase(armyId);
     setPage("battle");
   }
 
@@ -627,10 +650,12 @@ function App() {
   ) {
     setDetachmentPacks((currentDetachments) => {
       const nextDetachments = getNextDetachments(currentDetachments);
-      localStorage.setItem(
-        DETACHMENTS_STORAGE_KEY,
-        JSON.stringify(nextDetachments),
-      );
+      if (!hasDatabaseSession(sessionStatus, authToken)) {
+        localStorage.setItem(
+          DETACHMENTS_STORAGE_KEY,
+          JSON.stringify(nextDetachments),
+        );
+      }
       void syncDetachmentsToDatabase(nextDetachments);
       return nextDetachments;
     });
@@ -913,10 +938,12 @@ function App() {
   ) {
     setSavedArmies((currentArmies) => {
       const nextArmies = getNextArmies(currentArmies);
-      localStorage.setItem(
-        SAVED_ARMIES_STORAGE_KEY,
-        JSON.stringify(nextArmies),
-      );
+      if (!hasDatabaseSession(sessionStatus, authToken)) {
+        localStorage.setItem(
+          SAVED_ARMIES_STORAGE_KEY,
+          JSON.stringify(nextArmies),
+        );
+      }
       if (options.syncDatabase ?? true) {
         void syncSavedArmiesToDatabase(nextArmies);
       }
@@ -2589,6 +2616,26 @@ function normalizeSavedArmies(armies: SavedArmy[]): SavedArmy[] {
         ),
       })),
     }));
+}
+
+function getPreferredArmyId(
+  armies: SavedArmy[],
+  preferredArmyId: string | null,
+  currentArmyId: string,
+) {
+  if (preferredArmyId && armies.some((army) => army.id === preferredArmyId)) {
+    return preferredArmyId;
+  }
+
+  if (currentArmyId && armies.some((army) => army.id === currentArmyId)) {
+    return currentArmyId;
+  }
+
+  return armies[0]?.id ?? "";
+}
+
+function hasDatabaseSession(sessionStatus: SessionStatus, authToken: string) {
+  return sessionStatus === "logged-in" && Boolean(authToken);
 }
 
 function getUnitOverridePayload(unit: ArmyUnit): UnitOverridePayload {
