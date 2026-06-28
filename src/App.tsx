@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import "./App.css";
-import { neonAuthClient, neonAuthEnabled } from "./auth";
+import { getNeonAuthToken, neonAuthClient, neonAuthEnabled } from "./auth";
 import { Header } from "./components/header/Header";
 import { Modal } from "./components/modal/Modal";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
@@ -21,6 +21,7 @@ import { extractArmyRules, extractArmyUnits, type ArmyUnit } from "./utils/armyI
 import { getSelectedArmyRuleChoice } from "./utils/armyRules";
 import { bastionTaskForceStratagems, coreStratagems, getStratagemsForBattlePhase } from "./utils/stratagems";
 import { getActiveWeapons, getWeaponKey, getWeaponKeywords } from "./utils/weapon";
+import LoginPage from "./pages/LoginPage";
 
 const SAVED_ARMIES_STORAGE_KEY = "tabletop-battles.saved-armies";
 const DETACHMENTS_STORAGE_KEY = "tabletop-battles.detachments";
@@ -142,23 +143,37 @@ function App() {
       : [];
   const currentPage = getAppPageFromPath(location.pathname, Boolean(authAccount?.isAdmin));
 
+  const getApiAuthToken = useCallback(async () => {
+    if (authProvider === "neon") {
+      return getNeonAuthToken();
+    }
+
+    return authToken;
+  }, [authProvider, authToken]);
+
   const saveUserPreferencesToDatabase = useCallback(
     async (selectedArmyListId: string) => {
-      if (sessionStatus !== "logged-in" || !authToken) {
+      if (sessionStatus !== "logged-in") {
+        return;
+      }
+
+      const token = await getApiAuthToken();
+
+      if (!token) {
         return;
       }
 
       await apiRequest("/api/preferences", {
         body: { selectedArmyListId: selectedArmyListId || null },
         method: "PUT",
-        token: authToken,
+        token,
       }).catch(() => undefined);
     },
-    [authToken, sessionStatus],
+    [getApiAuthToken, sessionStatus],
   );
 
   useEffect(() => {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
       return;
     }
 
@@ -166,12 +181,18 @@ function App() {
 
     async function loadDatabaseArmies() {
       try {
+        const token = await getApiAuthToken();
+
+        if (!token) {
+          return;
+        }
+
         const [{ armies }, { preferences }] = await Promise.all([
           apiRequest<ArmyListsResponse>("/api/army-lists", {
-            token: authToken,
+            token,
           }),
           apiRequest<UserPreferencesResponse>("/api/preferences", {
-            token: authToken,
+            token,
           }),
         ]);
         const normalizedArmies = normalizeSavedArmies(armies);
@@ -198,7 +219,7 @@ function App() {
         const imported = await apiRequest<ArmyListsResponse>("/api/army-lists", {
           body: { armies: localArmies },
           method: "POST",
-          token: authToken,
+          token,
         });
         const importedArmies = normalizeSavedArmies(imported.armies);
 
@@ -224,10 +245,10 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, saveUserPreferencesToDatabase, sessionStatus]);
+  }, [getApiAuthToken, saveUserPreferencesToDatabase, sessionStatus]);
 
   useEffect(() => {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
       return;
     }
 
@@ -235,8 +256,14 @@ function App() {
 
     async function loadDatabaseDetachments() {
       try {
+        const token = await getApiAuthToken();
+
+        if (!token) {
+          return;
+        }
+
         const { detachments } = await apiRequest<DetachmentsResponse>("/api/detachments", {
-          token: authToken,
+          token,
         });
         const normalizedDetachments = mergeBuiltInDetachments(detachments);
 
@@ -259,7 +286,7 @@ function App() {
         const imported = await apiRequest<DetachmentsResponse>("/api/detachments", {
           body: { detachments: localDetachments },
           method: "POST",
-          token: authToken,
+          token,
         });
         const importedDetachments = mergeBuiltInDetachments(imported.detachments);
 
@@ -279,7 +306,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, sessionStatus]);
+  }, [getApiAuthToken, sessionStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,13 +314,14 @@ function App() {
     async function checkSession() {
       if (authToken) {
         try {
-          const { account } = await apiRequest<{ account: LocalAuthAccount }>("/api/session", {
+          const { account } = await apiRequest<{ account: AuthAccount | LocalAuthAccount }>("/api/session", {
             token: authToken,
           });
 
           if (!cancelled) {
-            setAuthProvider("local");
-            setAuthAccount({ ...account, provider: "local" });
+            const provider = "provider" in account ? account.provider : "local";
+            setAuthProvider(provider);
+            setAuthAccount({ ...account, provider });
             setSessionStatus("logged-in");
           }
           return;
@@ -307,8 +335,11 @@ function App() {
         const account = await getNeonSessionAccount();
 
         if (account) {
+          const token = await getNeonAuthToken();
+
           if (!cancelled) {
             localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
+            setAuthToken(token);
             setAuthProvider("neon");
             setAuthAccount(account);
             setSessionStatus("logged-in");
@@ -364,7 +395,7 @@ function App() {
 
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
-    setAuthToken("");
+    setAuthToken(await getNeonAuthToken());
     setAuthProvider("neon");
     setAuthAccount(account);
     setSessionStatus("logged-in");
@@ -393,7 +424,7 @@ function App() {
 
     localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
-    setAuthToken("");
+    setAuthToken(await getNeonAuthToken());
     setAuthProvider("neon");
     setAuthAccount(account);
     setSessionStatus("logged-in");
@@ -404,7 +435,7 @@ function App() {
       await neonAuthClient.signOut().catch(() => undefined);
     }
 
-    if (authToken) {
+    if (authProvider === "local" && authToken) {
       await apiRequest("/api/logout", {
         method: "POST",
         token: authToken,
@@ -528,7 +559,7 @@ function App() {
   function updateDetachmentPacks(getNextDetachments: (currentDetachments: DetachmentPack[]) => DetachmentPack[]) {
     setDetachmentPacks((currentDetachments) => {
       const nextDetachments = getNextDetachments(currentDetachments);
-      if (!hasDatabaseSession(sessionStatus, authToken)) {
+      if (!hasDatabaseSession(sessionStatus, authToken, authProvider)) {
         localStorage.setItem(DETACHMENTS_STORAGE_KEY, JSON.stringify(nextDetachments));
       }
       void syncDetachmentsToDatabase(nextDetachments);
@@ -564,25 +595,37 @@ function App() {
   }
 
   async function syncDetachmentsToDatabase(nextDetachments: DetachmentPack[]) {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
+      return;
+    }
+
+    const token = await getApiAuthToken();
+
+    if (!token) {
       return;
     }
 
     await apiRequest("/api/detachments", {
       body: { detachments: nextDetachments },
       method: "POST",
-      token: authToken,
+      token,
     }).catch(() => undefined);
   }
 
   async function deleteDetachmentFromDatabase(detachmentId: string) {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
+      return;
+    }
+
+    const token = await getApiAuthToken();
+
+    if (!token) {
       return;
     }
 
     await apiRequest(`/api/detachments/${detachmentId}`, {
       method: "DELETE",
-      token: authToken,
+      token,
     }).catch(() => undefined);
   }
 
@@ -770,7 +813,7 @@ function App() {
   ) {
     setSavedArmies((currentArmies) => {
       const nextArmies = getNextArmies(currentArmies);
-      if (!hasDatabaseSession(sessionStatus, authToken)) {
+      if (!hasDatabaseSession(sessionStatus, authToken, authProvider)) {
         localStorage.setItem(SAVED_ARMIES_STORAGE_KEY, JSON.stringify(nextArmies));
       }
       if (options.syncDatabase ?? true) {
@@ -781,37 +824,55 @@ function App() {
   }
 
   async function syncSavedArmiesToDatabase(nextArmies: SavedArmy[]) {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
+      return;
+    }
+
+    const token = await getApiAuthToken();
+
+    if (!token) {
       return;
     }
 
     await apiRequest("/api/army-lists", {
       body: { armies: nextArmies },
       method: "POST",
-      token: authToken,
+      token,
     }).catch(() => undefined);
   }
 
   async function deleteSavedArmyFromDatabase(armyId: string) {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
+      return;
+    }
+
+    const token = await getApiAuthToken();
+
+    if (!token) {
       return;
     }
 
     await apiRequest(`/api/army-lists/${armyId}`, {
       method: "DELETE",
-      token: authToken,
+      token,
     }).catch(() => undefined);
   }
 
   async function saveUnitOverrideToDatabase(armyId: string, unit: ArmyUnit) {
-    if (sessionStatus !== "logged-in" || !authToken) {
+    if (sessionStatus !== "logged-in") {
+      return;
+    }
+
+    const token = await getApiAuthToken();
+
+    if (!token) {
       return;
     }
 
     await apiRequest(`/api/army-lists/${encodeURIComponent(armyId)}/units/${encodeURIComponent(unit.id)}/override`, {
       body: { override: getUnitOverridePayload(unit) },
       method: "PUT",
-      token: authToken,
+      token,
     }).catch(() => undefined);
   }
 
@@ -825,7 +886,7 @@ function App() {
 
   if (sessionStatus === "logged-out") {
     return (
-      <LoginScreen
+      <LoginPage
         neonAuthEnabled={neonAuthEnabled}
         onLocalLogin={login}
         onNeonLogin={loginWithNeon}
@@ -873,7 +934,9 @@ function App() {
         <Route path="/army-rule" element={<ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />} />
         <Route
           path="/admin"
-          element={authAccount?.isAdmin ? <AdminDatabasePage authToken={authToken} /> : <Navigate replace to="/battle" />}
+          element={
+            authAccount?.isAdmin ? <AdminDatabasePage authToken={authToken} /> : <Navigate replace to="/battle" />
+          }
         />
         <Route
           path="/battle"
@@ -1039,118 +1102,6 @@ function App() {
         }
         onReset={() => setBattlePhase(getInitialBattlePhase(turnOwners))}
       />
-    </main>
-  );
-}
-
-type LoginScreenProps = {
-  neonAuthEnabled: boolean;
-  onLocalLogin: (username: string, password: string) => Promise<void>;
-  onNeonLogin: (email: string, password: string) => Promise<void>;
-  onNeonSignUp: (email: string, password: string) => Promise<void>;
-};
-
-function LoginScreen({ neonAuthEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }: LoginScreenProps) {
-  const [mode, setMode] = useState<AuthProvider>(neonAuthEnabled ? "neon" : "local");
-  const [username, setUsername] = useState(neonAuthEnabled ? "" : "admin");
-  const [password, setPassword] = useState("admin");
-  const [error, setError] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const isNeonMode = mode === "neon";
-
-  return (
-    <main className="login-shell">
-      <form
-        className="login-panel"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setError("");
-          setIsSubmitting(true);
-          const submit = isNeonMode
-            ? isSignUp
-              ? onNeonSignUp(username, password)
-              : onNeonLogin(username, password)
-            : onLocalLogin(username, password);
-
-          submit.catch((loginError: Error) => setError(loginError.message)).finally(() => setIsSubmitting(false));
-        }}
-      >
-        <div>
-          <h1>Tabletop Battles</h1>
-          <p>Log in to continue.</p>
-        </div>
-        {neonAuthEnabled && (
-          <div className="login-mode-tabs" role="tablist" aria-label="Login type">
-            <button
-              aria-selected={mode === "neon"}
-              onClick={() => {
-                setMode("neon");
-                setUsername("");
-                setPassword("");
-                setError("");
-              }}
-              role="tab"
-              type="button"
-            >
-              Neon
-            </button>
-            <button
-              aria-selected={mode === "local"}
-              onClick={() => {
-                setMode("local");
-                setUsername("admin");
-                setPassword("admin");
-                setError("");
-              }}
-              role="tab"
-              type="button"
-            >
-              Local Admin
-            </button>
-          </div>
-        )}
-        <label>
-          <span>{isNeonMode ? "Email" : "Username"}</span>
-          <input
-            autoComplete={isNeonMode ? "email" : "username"}
-            type={isNeonMode ? "email" : "text"}
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Password</span>
-          <input
-            autoComplete="current-password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        {error && <p className="error-message">{error}</p>}
-        <button disabled={isSubmitting} type="submit">
-          {isSubmitting
-            ? isSignUp && isNeonMode
-              ? "Creating..."
-              : "Logging in..."
-            : isSignUp && isNeonMode
-              ? "Create Account"
-              : "Log In"}
-        </button>
-        {isNeonMode && (
-          <button
-            className="login-link-button"
-            onClick={() => {
-              setError("");
-              setIsSignUp((current) => !current);
-            }}
-            type="button"
-          >
-            {isSignUp ? "Already have a Neon account? Log in" : "Need a Neon account? Create one"}
-          </button>
-        )}
-      </form>
     </main>
   );
 }
@@ -1853,8 +1804,8 @@ function getPreferredArmyId(armies: SavedArmy[], preferredArmyId: string | null,
   return armies[0]?.id ?? "";
 }
 
-function hasDatabaseSession(sessionStatus: SessionStatus, authToken: string) {
-  return sessionStatus === "logged-in" && Boolean(authToken);
+function hasDatabaseSession(sessionStatus: SessionStatus, authToken: string, authProvider: AuthProvider) {
+  return sessionStatus === "logged-in" && (authProvider === "neon" || Boolean(authToken));
 }
 
 function getUnitOverridePayload(unit: ArmyUnit): UnitOverridePayload {

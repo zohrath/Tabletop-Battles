@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { readdir, readFile } from "node:fs/promises";
 import http from "node:http";
 import { fileURLToPath, URL } from "node:url";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -10,6 +11,17 @@ const databaseUrl =
   process.env.DATABASE_URL ??
   "postgres://tabletop:tabletop@localhost:5436/tabletop_battles";
 const pool = new Pool({ connectionString: databaseUrl });
+const neonAuthBaseUrl =
+  process.env.NEON_AUTH_BASE_URL ??
+  process.env.VITE_NEON_AUTH_URL ??
+  process.env.VITE_STORAGE_TABLETOP_NEON_AUTH_BASE_URL ??
+  "";
+const neonAuthJwksUrl =
+  process.env.NEON_AUTH_JWKS_URL ??
+  (neonAuthBaseUrl ? `${neonAuthBaseUrl}/.well-known/jwks.json` : "");
+const neonAuthJwks = neonAuthJwksUrl
+  ? createRemoteJWKSet(new URL(neonAuthJwksUrl))
+  : null;
 const migrationsDirectory = fileURLToPath(
   new URL("../db/migrations", import.meta.url),
 );
@@ -613,21 +625,19 @@ async function requireAccount(request) {
     throw httpError(401, "Not logged in");
   }
 
-  const result = await pool.query(
-    `select accounts.*
-     from account_sessions
-     join accounts on accounts.id = account_sessions.account_id
-     where account_sessions.token_hash = $1
-       and account_sessions.expires_at > now()`,
-    [hashToken(token)],
-  );
-  const account = result.rows[0];
+  const localAccount = await getLocalAccountFromToken(token);
 
-  if (!account) {
-    throw httpError(401, "Not logged in");
+  if (localAccount) {
+    return toPublicAccount(localAccount);
   }
 
-  return toPublicAccount(account);
+  const neonAccount = await getNeonAccountFromToken(token);
+
+  if (neonAccount) {
+    return neonAccount;
+  }
+
+  throw httpError(401, "Not logged in");
 }
 
 async function requireAdmin(request) {
@@ -642,8 +652,21 @@ async function requireAdmin(request) {
 
 async function requireAppUser(request) {
   const account = await requireAccount(request);
-  await ensureLocalAccountAppUsers();
+  if (account.provider === "neon") {
+    const result = await pool.query(
+      "select * from app_users where neon_user_id = $1",
+      [account.id],
+    );
+    const appUser = result.rows[0];
 
+    if (!appUser) {
+      throw httpError(401, "App user not found");
+    }
+
+    return appUser;
+  }
+
+  await ensureLocalAccountAppUsers();
   const result = await pool.query(
     "select * from app_users where local_account_id = $1",
     [account.id],
@@ -655,6 +678,69 @@ async function requireAppUser(request) {
   }
 
   return appUser;
+}
+
+async function getLocalAccountFromToken(token) {
+  const result = await pool.query(
+    `select accounts.*
+     from account_sessions
+     join accounts on accounts.id = account_sessions.account_id
+     where account_sessions.token_hash = $1
+       and account_sessions.expires_at > now()`,
+    [hashToken(token)],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function getNeonAccountFromToken(token) {
+  if (!neonAuthJwks || token.split(".").length !== 3) {
+    return null;
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, neonAuthJwks);
+    const neonUserId = String(payload.sub ?? "").trim();
+
+    if (!neonUserId) {
+      return null;
+    }
+
+    const email = getStringClaim(payload.email);
+    const name = getStringClaim(payload.name);
+    const displayName = name || email || "Neon user";
+    const appUser = await upsertNeonAppUser({
+      displayName,
+      email,
+      neonUserId,
+    });
+
+    return {
+      id: neonUserId,
+      isAdmin: appUser.is_admin,
+      provider: "neon",
+      username: email || displayName,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function upsertNeonAppUser({ displayName, email, neonUserId }) {
+  const result = await pool.query(
+    `insert into app_users
+      (id, neon_user_id, email, display_name, is_admin)
+     values ($1, $2, $3, $4, false)
+     on conflict (neon_user_id)
+     do update set
+       email = excluded.email,
+       display_name = excluded.display_name,
+       updated_at = now()
+     returning *`,
+    [randomUUID(), neonUserId, email || null, displayName],
+  );
+
+  return result.rows[0];
 }
 
 async function upsertArmyList(userId, army) {
@@ -1297,9 +1383,14 @@ function hashToken(token) {
 function toPublicAccount(account) {
   return {
     id: account.id,
+    provider: "local",
     username: account.username,
     isAdmin: account.is_admin,
   };
+}
+
+function getStringClaim(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function httpError(status, message) {
