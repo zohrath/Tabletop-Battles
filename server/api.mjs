@@ -5,8 +5,8 @@ import pg from "pg";
 
 const { Pool } = pg;
 const databaseUrl =
-  process.env.DATABASE_URL ??
   process.env.STORAGE_TABLETOP_DATABASE_URL ??
+  process.env.DATABASE_URL ??
   "postgres://tabletop:tabletop@localhost:5436/tabletop_battles";
 const pool = new Pool({ connectionString: databaseUrl });
 const schemaReady = ensureSchema();
