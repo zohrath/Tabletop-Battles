@@ -4,22 +4,23 @@ import "./App.css";
 import { getNeonAuthToken, neonAuthClient, neonAuthEnabled } from "./lib/auth";
 import { Header } from "./components/header/Header";
 import { Modal } from "./components/modal/Modal";
+import { DetachmentDetail, DetachmentEditor } from "./components/detachmentEditor/DetachmentEditor";
+import { getDetachmentStratagems, normalizeDetachmentPacks } from "./components/detachmentEditor/detachmentData";
 import { PhaseIndicator } from "./components/phaseIndicator/PhaseIndicator";
 import { Toolbar } from "./components/toolbar/Toolbar";
 import { AdminDatabasePage } from "./pages/AdminDatabasePage";
 import { ArmiesPage } from "./pages/ArmiesPage";
 import { ArmyRulePage } from "./pages/ArmyRulePage";
 import { BattlePage } from "./pages/BattlePage";
-import type { DetachmentPack, DetachmentStratagem, SavedArmy } from "./types/AppData";
+import type { DetachmentPack, SavedArmy } from "./types/AppData";
 import type { AppPage } from "./types/AppPage";
 import { TURN_OWNERS, TURNS, type BattlePhase, type TurnOwner, type Turn } from "./types/BattlePhase";
 import { Phase } from "./types/Phase";
-import type { Stratagem, StratagemTiming } from "./types/Stratagem";
 import type { ArmyImported } from "./types/armyImported";
 import { apiRequest, isLocalApp } from "./utils/api";
 import { extractArmyRules, extractArmyUnits, type ArmyUnit } from "./utils/armyImported";
 import { getSelectedArmyRuleChoice } from "./utils/armyRules";
-import { bastionTaskForceStratagems, coreStratagems, getStratagemsForBattlePhase } from "./utils/stratagems";
+import { coreStratagems, getStratagemsForBattlePhase } from "./utils/stratagems";
 import { getActiveWeapons, getWeaponKey, getWeaponKeywords } from "./utils/weapon";
 import LoginPage from "./pages/LoginPage";
 
@@ -28,7 +29,6 @@ const DETACHMENTS_STORAGE_KEY = "tabletop-battles.detachments";
 const AUTH_TOKEN_STORAGE_KEY = "tabletop-battles.auth-token";
 const AUTH_PROVIDER_STORAGE_KEY = "tabletop-battles.auth-provider";
 const PHASES = Object.values(Phase) as Phase[];
-
 const INITIAL_BATTLE_PHASE: BattlePhase = {
   phase: PHASES[0],
   owner: TURN_OWNERS[0],
@@ -76,23 +76,6 @@ type UnitOverridePayload = {
   abilities: ArmyUnit["abilities"];
   weaponKeywordOverrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>;
 };
-
-const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
-  {
-    id: "bastion-task-force",
-    name: "Bastion Task Force",
-    detachmentRule: "",
-    enhancements: "",
-    stratagems: bastionTaskForceStratagems.map((stratagem) => ({
-      id: stratagem.id,
-      name: stratagem.name,
-      cpCost: stratagem.cpCost,
-      description: stratagem.description,
-      phases: stratagem.phases,
-      timing: stratagem.timing,
-    })),
-  },
-];
 
 function App() {
   const location = useLocation();
@@ -283,38 +266,17 @@ function App() {
         const { detachments } = await apiRequest<DetachmentsResponse>("/api/detachments", {
           token,
         });
-        const normalizedDetachments = mergeBuiltInDetachments(detachments);
+        const normalizedDetachments = normalizeDetachmentPacks(detachments);
 
         if (cancelled) {
           return;
         }
 
-        if (detachments.length > 0) {
-          setDetachmentPacks(normalizedDetachments);
-          localStorage.removeItem(DETACHMENTS_STORAGE_KEY);
-          return;
-        }
-
-        const localDetachments = loadDetachmentPacks();
-
-        if (localDetachments.length === 0) {
-          return;
-        }
-
-        const imported = await apiRequest<DetachmentsResponse>("/api/detachments", {
-          body: { detachments: localDetachments },
-          method: "POST",
-          token,
-        });
-        const importedDetachments = mergeBuiltInDetachments(imported.detachments);
-
-        if (!cancelled) {
-          setDetachmentPacks(importedDetachments);
-          localStorage.removeItem(DETACHMENTS_STORAGE_KEY);
-        }
+        setDetachmentPacks(normalizedDetachments);
+        localStorage.removeItem(DETACHMENTS_STORAGE_KEY);
       } catch {
         if (!cancelled) {
-          setError("Could not sync detachments. Using browser storage.");
+          setError("Could not sync detachments.");
         }
       }
     }
@@ -393,6 +355,10 @@ function App() {
   }, [authToken]);
 
   async function login(username: string, password: string) {
+    if (!isLocalApp()) {
+      throw new Error("Local admin login is only available locally.");
+    }
+
     console.info("[auth] Local login start");
     const result = await apiRequest<{ account: AuthAccount; token: string }>("/api/login", {
       body: { username, password },
@@ -656,7 +622,7 @@ function App() {
     }
 
     await apiRequest("/api/detachments", {
-      body: { detachments: getCustomDetachments(nextDetachments) },
+      body: { detachments: nextDetachments },
       method: "POST",
       token,
     }).catch(() => undefined);
@@ -937,6 +903,7 @@ function App() {
   if (sessionStatus === "logged-out") {
     return (
       <LoginPage
+        localAuthEnabled={isLocalApp()}
         neonAuthEnabled={neonAuthEnabled}
         neonSignUpEnabled={isLocalApp()}
         onLocalLogin={login}
@@ -1261,374 +1228,6 @@ function getNextPhase(currentPhase: Phase) {
   return PHASES[nextIndex];
 }
 
-type DetachmentEditorProps = {
-  activeArmy: SavedArmy | null;
-  detachmentPacks: DetachmentPack[];
-  onCancel: () => void;
-  onSave: (detachmentPacks: DetachmentPack[], selectedDetachmentId: string, deletedDetachmentIds: string[]) => void;
-};
-
-function DetachmentEditor({ activeArmy, detachmentPacks, onCancel, onSave }: DetachmentEditorProps) {
-  const [detachmentSelectorOpen, setDetachmentSelectorOpen] = useState(false);
-  const [draftDetachments, setDraftDetachments] = useState(() => detachmentPacks.map(cloneDetachmentPack));
-  const [draftSelectedDetachmentId, setDraftSelectedDetachmentId] = useState(
-    () => activeArmy?.selectedDetachmentId ?? "",
-  );
-  const [deletedDetachmentIds, setDeletedDetachmentIds] = useState<string[]>([]);
-  const selectedDraftDetachment =
-    draftDetachments.find((detachment) => detachment.id === draftSelectedDetachmentId) ?? null;
-
-  function createDraftDetachment() {
-    const id = createId();
-    setDraftDetachments((currentDetachments) => [
-      ...currentDetachments,
-      {
-        id,
-        name: "New Detachment",
-        detachmentRule: "",
-        enhancements: "",
-        stratagems: [],
-      },
-    ]);
-    setDraftSelectedDetachmentId(id);
-  }
-
-  function updateDraftDetachment(nextDetachment: DetachmentPack) {
-    setDraftDetachments((currentDetachments) =>
-      currentDetachments.map((detachment) => (detachment.id === nextDetachment.id ? nextDetachment : detachment)),
-    );
-  }
-
-  function deleteDraftDetachment(detachmentId: string) {
-    setDraftDetachments((currentDetachments) =>
-      currentDetachments.filter((detachment) => detachment.id !== detachmentId),
-    );
-    setDeletedDetachmentIds((currentIds) =>
-      currentIds.includes(detachmentId) ? currentIds : [...currentIds, detachmentId],
-    );
-
-    if (draftSelectedDetachmentId === detachmentId) {
-      setDraftSelectedDetachmentId("");
-    }
-  }
-
-  return (
-    <section className="detachment-editor">
-      <div className="detachment-selector">
-        <span>Current army detachment</span>
-        <button
-          aria-expanded={detachmentSelectorOpen}
-          className="detachment-selector-current"
-          disabled={!activeArmy}
-          type="button"
-          onClick={() => setDetachmentSelectorOpen((isOpen) => !isOpen)}
-        >
-          {getDraftSelectedDetachmentName(draftSelectedDetachmentId, draftDetachments)}
-        </button>
-        {detachmentSelectorOpen && (
-          <div aria-label="Current army detachment options" className="detachment-option-list" role="listbox">
-            <button
-              aria-selected={!activeArmy?.selectedDetachmentId}
-              disabled={!activeArmy}
-              role="option"
-              type="button"
-              onClick={() => {
-                setDraftSelectedDetachmentId("");
-                setDetachmentSelectorOpen(false);
-              }}
-            >
-              None selected
-            </button>
-            {draftDetachments.map((detachment) => (
-              <button
-                aria-selected={draftSelectedDetachmentId === detachment.id}
-                disabled={!activeArmy}
-                key={detachment.id}
-                role="option"
-                type="button"
-                onClick={() => {
-                  setDraftSelectedDetachmentId(detachment.id);
-                  setDetachmentSelectorOpen(false);
-                }}
-              >
-                {detachment.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <button type="button" onClick={createDraftDetachment}>
-        Add Detachment
-      </button>
-
-      {selectedDraftDetachment ? (
-        <div className="detachment-list">
-          <DetachmentEditorCard
-            detachment={selectedDraftDetachment}
-            key={selectedDraftDetachment.id}
-            onDeleteDetachment={deleteDraftDetachment}
-            onUpdateDetachment={updateDraftDetachment}
-          />
-        </div>
-      ) : (
-        <p className="empty-state">No detachment selected.</p>
-      )}
-
-      <div className="detachment-editor-footer">
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            onSave(draftDetachments.map(cloneDetachmentPack), draftSelectedDetachmentId, deletedDetachmentIds)
-          }
-        >
-          Save
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function getDraftSelectedDetachmentName(selectedDetachmentId: string, detachmentPacks: DetachmentPack[]) {
-  if (!selectedDetachmentId) {
-    return "None selected";
-  }
-
-  return detachmentPacks.find((detachment) => detachment.id === selectedDetachmentId)?.name ?? "None selected";
-}
-
-type DetachmentEditorCardProps = {
-  detachment: DetachmentPack;
-  onDeleteDetachment: (detachmentId: string) => void;
-  onUpdateDetachment: (detachment: DetachmentPack) => void;
-};
-
-function DetachmentEditorCard({ detachment, onDeleteDetachment, onUpdateDetachment }: DetachmentEditorCardProps) {
-  const isBuiltIn = BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id);
-
-  return (
-    <article className="detachment-card">
-      <label>
-        <span>Name</span>
-        <input
-          value={detachment.name}
-          onChange={(event) => onUpdateDetachment({ ...detachment, name: event.target.value })}
-        />
-      </label>
-      <label>
-        <span>Detachment Rule</span>
-        <textarea
-          value={detachment.detachmentRule}
-          onChange={(event) =>
-            onUpdateDetachment({
-              ...detachment,
-              detachmentRule: event.target.value,
-            })
-          }
-        />
-      </label>
-      <label>
-        <span>Enhancements</span>
-        <textarea
-          value={detachment.enhancements}
-          onChange={(event) =>
-            onUpdateDetachment({
-              ...detachment,
-              enhancements: event.target.value,
-            })
-          }
-        />
-      </label>
-
-      <div className="stratagem-editor-heading">
-        <h3>Stratagems</h3>
-        <button
-          type="button"
-          onClick={() =>
-            onUpdateDetachment({
-              ...detachment,
-              stratagems: [
-                ...detachment.stratagems,
-                {
-                  id: createId(),
-                  name: "New Stratagem",
-                  cpCost: 1,
-                  description: "",
-                  phases: "Any",
-                  timing: "both",
-                },
-              ],
-            })
-          }
-        >
-          Add Stratagem
-        </button>
-      </div>
-
-      <div className="stratagem-editor-list">
-        {detachment.stratagems.map((stratagem) => (
-          <StratagemEditorCard
-            key={stratagem.id}
-            stratagem={stratagem}
-            onDelete={() =>
-              onUpdateDetachment({
-                ...detachment,
-                stratagems: detachment.stratagems.filter((currentStratagem) => currentStratagem.id !== stratagem.id),
-              })
-            }
-            onUpdate={(nextStratagem) =>
-              onUpdateDetachment({
-                ...detachment,
-                stratagems: detachment.stratagems.map((currentStratagem) =>
-                  currentStratagem.id === nextStratagem.id ? nextStratagem : currentStratagem,
-                ),
-              })
-            }
-          />
-        ))}
-      </div>
-
-      {!isBuiltIn && (
-        <button className="danger-button" type="button" onClick={() => onDeleteDetachment(detachment.id)}>
-          Delete Detachment
-        </button>
-      )}
-    </article>
-  );
-}
-
-type StratagemEditorCardProps = {
-  stratagem: DetachmentStratagem;
-  onDelete: () => void;
-  onUpdate: (stratagem: DetachmentStratagem) => void;
-};
-
-function StratagemEditorCard({ stratagem, onDelete, onUpdate }: StratagemEditorCardProps) {
-  const selectedPhases = stratagem.phases === "Any" ? [] : stratagem.phases;
-
-  return (
-    <article className="stratagem-editor-card">
-      <div className="stratagem-editor-grid">
-        <label>
-          <span>Name</span>
-          <input value={stratagem.name} onChange={(event) => onUpdate({ ...stratagem, name: event.target.value })} />
-        </label>
-        <label>
-          <span>CP</span>
-          <input
-            min={0}
-            type="number"
-            value={stratagem.cpCost}
-            onChange={(event) =>
-              onUpdate({
-                ...stratagem,
-                cpCost: Number(event.target.value) || 0,
-              })
-            }
-          />
-        </label>
-        <label>
-          <span>Timing</span>
-          <select
-            value={stratagem.timing}
-            onChange={(event) =>
-              onUpdate({
-                ...stratagem,
-                timing: event.target.value as StratagemTiming,
-              })
-            }
-          >
-            <option value="both">Both turns</option>
-            <option value="own-turn">Your turn</option>
-            <option value="opponent-turn">Opponent turn</option>
-          </select>
-        </label>
-      </div>
-
-      <fieldset className="phase-picker">
-        <legend>Phases</legend>
-        <label>
-          <input
-            checked={stratagem.phases === "Any"}
-            type="checkbox"
-            onChange={(event) =>
-              onUpdate({
-                ...stratagem,
-                phases: event.target.checked ? "Any" : [Phase.Command],
-              })
-            }
-          />
-          Any
-        </label>
-        {PHASES.map((phase) => (
-          <label key={phase}>
-            <input
-              checked={stratagem.phases !== "Any" && selectedPhases.includes(phase)}
-              disabled={stratagem.phases === "Any"}
-              type="checkbox"
-              onChange={(event) => {
-                const nextPhases = event.target.checked
-                  ? [...selectedPhases, phase]
-                  : selectedPhases.filter((selectedPhase) => selectedPhase !== phase);
-
-                onUpdate({
-                  ...stratagem,
-                  phases: nextPhases.length > 0 ? nextPhases : [Phase.Command],
-                });
-              }}
-            />
-            {phase.replace(" Phase", "")}
-          </label>
-        ))}
-      </fieldset>
-
-      <label>
-        <span>Stratagem Text</span>
-        <textarea
-          value={stratagem.description}
-          onChange={(event) => onUpdate({ ...stratagem, description: event.target.value })}
-        />
-      </label>
-      <button type="button" onClick={onDelete}>
-        Delete Stratagem
-      </button>
-    </article>
-  );
-}
-
-function DetachmentDetail({ detachment }: { detachment: DetachmentPack }) {
-  return (
-    <div className="detachment-detail">
-      <section>
-        <h3>Detachment Rule</h3>
-        <p>{detachment.detachmentRule || "No detachment rule saved."}</p>
-      </section>
-      <section>
-        <h3>Enhancements</h3>
-        <p>{detachment.enhancements || "No enhancements saved."}</p>
-      </section>
-      <section>
-        <h3>Stratagems</h3>
-        {detachment.stratagems.length > 0 ? (
-          <ul>
-            {detachment.stratagems.map((stratagem) => (
-              <li key={stratagem.id}>
-                <strong>{stratagem.name}</strong>
-                <span>{stratagem.cpCost} CP</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No stratagems saved.</p>
-        )}
-      </section>
-    </div>
-  );
-}
-
 type AddChipModalProps = {
   closeAriaLabel: string;
   descriptionLabel: string;
@@ -1794,23 +1393,6 @@ function getVisibleWeaponKeywordNames(unit: ArmyUnit, weaponKey: string) {
   return weapon ? getWeaponKeywords(weapon).map((keyword) => keyword.name) : [];
 }
 
-function getDetachmentStratagems(detachment: DetachmentPack | null): Stratagem[] {
-  if (!detachment) {
-    return [];
-  }
-
-  return detachment.stratagems.map((stratagem) => ({
-    id: `${detachment.id}:${stratagem.id}`,
-    detachmentKey: detachment.id,
-    name: stratagem.name,
-    cpCost: stratagem.cpCost,
-    description: stratagem.description,
-    phases: stratagem.phases,
-    source: "detachment",
-    timing: stratagem.timing,
-  }));
-}
-
 function loadSavedArmies(): SavedArmy[] {
   try {
     const savedArmies = localStorage.getItem(SAVED_ARMIES_STORAGE_KEY);
@@ -1871,56 +1453,10 @@ function loadDetachmentPacks(): DetachmentPack[] {
     const savedDetachments = localStorage.getItem(DETACHMENTS_STORAGE_KEY);
     const parsedDetachments = savedDetachments ? (JSON.parse(savedDetachments) as DetachmentPack[]) : [];
 
-    return mergeBuiltInDetachments(parsedDetachments);
+    return normalizeDetachmentPacks(parsedDetachments);
   } catch {
-    return BUILT_IN_DETACHMENTS;
+    return [];
   }
-}
-
-function mergeBuiltInDetachments(savedDetachments: DetachmentPack[]) {
-  const savedById = new Map(savedDetachments.map((detachment) => [detachment.id, detachment]));
-  const mergedBuiltIns = BUILT_IN_DETACHMENTS.map((detachment) =>
-    normalizeDetachmentPack(savedById.get(detachment.id) ?? detachment),
-  );
-  const customDetachments = savedDetachments
-    .filter((detachment) => !BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id))
-    .map(normalizeDetachmentPack);
-
-  return [...mergedBuiltIns, ...customDetachments];
-}
-
-function getCustomDetachments(detachments: DetachmentPack[]) {
-  return detachments.filter(
-    (detachment) => !BUILT_IN_DETACHMENTS.some((builtInDetachment) => builtInDetachment.id === detachment.id),
-  );
-}
-
-function cloneDetachmentPack(detachment: DetachmentPack): DetachmentPack {
-  return {
-    ...detachment,
-    stratagems: detachment.stratagems.map((stratagem) => ({ ...stratagem })),
-  };
-}
-
-function normalizeDetachmentPack(detachment: DetachmentPack): DetachmentPack {
-  return {
-    id: detachment.id,
-    name: detachment.name || "Unnamed Detachment",
-    detachmentRule: detachment.detachmentRule ?? "",
-    enhancements: detachment.enhancements ?? "",
-    stratagems: (detachment.stratagems ?? []).map(normalizeDetachmentStratagem),
-  };
-}
-
-function normalizeDetachmentStratagem(stratagem: DetachmentStratagem): DetachmentStratagem {
-  return {
-    id: stratagem.id || createId(),
-    name: stratagem.name || "Unnamed Stratagem",
-    cpCost: Number.isFinite(stratagem.cpCost) ? stratagem.cpCost : 1,
-    description: stratagem.description ?? "",
-    phases: stratagem.phases === "Any" ? "Any" : (stratagem.phases ?? "Any"),
-    timing: stratagem.timing ?? "both",
-  };
 }
 
 function createId() {

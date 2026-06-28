@@ -3,6 +3,7 @@ import { useState } from "react";
 type AuthProvider = "local" | "neon";
 
 type LoginPageProps = {
+  localAuthEnabled: boolean;
   neonAuthEnabled: boolean;
   neonSignUpEnabled: boolean;
   onLocalLogin: (username: string, password: string) => Promise<void>;
@@ -10,10 +11,18 @@ type LoginPageProps = {
   onNeonSignUp: (email: string, password: string) => Promise<void>;
 };
 
-function LoginPage({ neonAuthEnabled, neonSignUpEnabled, onLocalLogin, onNeonLogin, onNeonSignUp }: LoginPageProps) {
-  const [mode, setMode] = useState<AuthProvider>(neonAuthEnabled ? "neon" : "local");
-  const [username, setUsername] = useState(neonAuthEnabled ? "" : "admin");
-  const [password, setPassword] = useState("admin");
+function LoginPage({
+  localAuthEnabled,
+  neonAuthEnabled,
+  neonSignUpEnabled,
+  onLocalLogin,
+  onNeonLogin,
+  onNeonSignUp,
+}: LoginPageProps) {
+  const initialMode = neonAuthEnabled ? "neon" : "local";
+  const [mode, setMode] = useState<AuthProvider>(initialMode);
+  const [username, setUsername] = useState(initialMode === "neon" ? "" : "admin");
+  const [password, setPassword] = useState(initialMode === "neon" ? "" : "admin");
   const [error, setError] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,7 +45,9 @@ function LoginPage({ neonAuthEnabled, neonSignUpEnabled, onLocalLogin, onNeonLog
             ? isSignUp && neonSignUpEnabled
               ? onNeonSignUp(username, password)
               : onNeonLogin(username, password)
-            : onLocalLogin(username, password);
+            : localAuthEnabled
+              ? onLocalLogin(username, password)
+              : Promise.reject(new Error("Local admin login is only available locally."));
 
           submit.catch((loginError: Error) => setError(loginError.message)).finally(() => setIsSubmitting(false));
         }}
@@ -45,7 +56,7 @@ function LoginPage({ neonAuthEnabled, neonSignUpEnabled, onLocalLogin, onNeonLog
           <h1>Tabletop Battles</h1>
           <p>Log in to continue.</p>
         </div>
-        {neonAuthEnabled && (
+        {neonAuthEnabled && localAuthEnabled && (
           <div className="login-mode-tabs" role="tablist" aria-label="Login type">
             <button
               aria-selected={mode === "neon"}

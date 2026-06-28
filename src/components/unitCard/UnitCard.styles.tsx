@@ -1,13 +1,14 @@
 import styled from "@emotion/styled";
 
 interface CardProps {
-  backgroundColor?: string;
+  variant: "default" | "alternate";
 }
 
 export const Card = styled.article<CardProps>`
-  background-color: ${(props) => props.backgroundColor};
+  background-color: ${(props) => (props.variant === "alternate" ? "var(--unit-card-alt-bg)" : "var(--unit-card-bg)")};
   border: 1px solid var(--border);
   border-radius: 8px;
+  box-shadow: var(--shadow);
   padding: 16px 16px 38px;
   position: relative;
 

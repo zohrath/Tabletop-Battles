@@ -22,7 +22,6 @@ const neonAuthJwksUrl =
 const neonAuthJwks = neonAuthJwksUrl
   ? createRemoteJWKSet(new URL(neonAuthJwksUrl))
   : null;
-const builtInDetachmentIds = new Set(["bastion-task-force"]);
 const migrationsDirectory = fileURLToPath(
   new URL("../db/migrations", import.meta.url),
 );
@@ -1013,6 +1012,7 @@ async function getDetachmentsForUser(userId) {
              'name', detachment_stratagems.name,
              'cpCost', detachment_stratagems.cp_cost,
              'description', detachment_stratagems.description,
+             'imageKey', detachment_stratagems.image_key,
              'phases', detachment_stratagems.phases,
              'timing', detachment_stratagems.timing
            )
@@ -1045,10 +1045,6 @@ async function getDetachmentsForUser(userId) {
 
 async function upsertDetachment(userId, detachment) {
   const normalizedDetachment = normalizeDetachmentPayload(detachment);
-
-  if (builtInDetachmentIds.has(normalizedDetachment.id)) {
-    return;
-  }
 
   const client = await pool.connect();
 
@@ -1108,16 +1104,18 @@ async function upsertDetachment(userId, detachment) {
             name,
             cp_cost,
             description,
+            image_key,
             phases,
             timing
           )
-         values ($1, $2, $3, $4, $5, $6, $7)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           stratagem.id,
           normalizedDetachment.id,
           stratagem.name,
           stratagem.cpCost,
           stratagem.description,
+          stratagem.imageKey,
           JSON.stringify(stratagem.phases),
           stratagem.timing,
         ],
@@ -1297,6 +1295,7 @@ function normalizeDetachmentStratagemPayload(stratagem) {
       ? Number(stratagem.cpCost)
       : 1,
     description: String(stratagem.description ?? ""),
+    imageKey: stratagem.imageKey ? String(stratagem.imageKey) : undefined,
     name,
     phases: stratagem.phases ?? "Any",
     timing: stratagem.timing ?? "both",

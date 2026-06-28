@@ -1,13 +1,9 @@
 import { useState, type CSSProperties } from "react";
-import hereseyUndone from "../../assets/hereseyUndone.png";
+import heresyUndone from "../../assets/heresyUndone.png";
 import type { Stratagem } from "../../types/Stratagem";
 import { Header } from "../header/Header";
 import { Modal } from "../modal/Modal";
-import {
-  StratagemButton,
-  StratagemDescription,
-  StratagemsIndicatorPanel,
-} from "./StratagemsIndicator.styles";
+import { StratagemButton, StratagemDescription, StratagemsIndicatorPanel } from "./StratagemsIndicator.styles";
 
 type StratagemsIndicatorProps = {
   side?: "left" | "right";
@@ -18,12 +14,8 @@ type StratagemsIndicatorStyle = CSSProperties & {
   "--stratagem-icon-size": string;
 };
 
-export function StratagemsIndicator({
-  side = "left",
-  stratagems,
-}: StratagemsIndicatorProps) {
-  const [selectedStratagem, setSelectedStratagem] =
-    useState<Stratagem | null>(null);
+export function StratagemsIndicator({ side = "left", stratagems }: StratagemsIndicatorProps) {
+  const [selectedStratagem, setSelectedStratagem] = useState<Stratagem | null>(null);
 
   if (stratagems.length === 0) {
     return null;
@@ -36,9 +28,7 @@ export function StratagemsIndicator({
       <StratagemsIndicatorPanel
         aria-label="Stratagems indicator"
         data-side={side}
-        style={
-          { "--stratagem-icon-size": iconSize } as StratagemsIndicatorStyle
-        }
+        style={{ "--stratagem-icon-size": iconSize } as StratagemsIndicatorStyle}
       >
         {stratagems.map((stratagem) => (
           <StratagemButton
@@ -47,7 +37,7 @@ export function StratagemsIndicator({
             type="button"
             onClick={() => setSelectedStratagem(stratagem)}
           >
-            <img alt="" src={stratagem.imageSrc ?? hereseyUndone} />
+            <img alt="" src={stratagem.imageSrc ?? heresyUndone} />
           </StratagemButton>
         ))}
       </StratagemsIndicatorPanel>
@@ -66,9 +56,7 @@ export function StratagemsIndicator({
           maxWidth={560}
           onClose={() => setSelectedStratagem(null)}
         >
-          <StratagemDescription>
-            {selectedStratagem.description}
-          </StratagemDescription>
+          <StratagemDescription>{selectedStratagem.description}</StratagemDescription>
         </Modal>
       )}
     </>

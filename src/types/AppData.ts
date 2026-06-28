@@ -26,6 +26,7 @@ export type DetachmentStratagem = {
   name: string;
   cpCost: number;
   description: string;
+  imageKey?: string;
   phases: Phase[] | "Any";
   timing: StratagemTiming;
 };

@@ -29,7 +29,7 @@ const UnitCard = ({
   setSelectedWeapon,
 }: Props) => {
   return (
-    <Card backgroundColor={index % 2 === 0 ? "#f9f9f9" : "#ffffff"}>
+    <Card variant={index % 2 === 0 ? "alternate" : "default"}>
       <CardHeader
         role="button"
         tabIndex={0}
