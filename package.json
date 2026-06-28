@@ -4,13 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "api": "node api/server.mjs",
     "dev": "vite",
+    "dev:api": "node api/server.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/styled": "^11.14.1",
+    "@neondatabase/neon-js": "^0.6.2-beta",
+    "pg": "^8.22.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import { neonAuthClient, neonAuthEnabled } from "./auth";
 import { ArmyUnitList } from "./components/ArmyUnitList";
 import { Header } from "./components/header/Header";
 import { Modal } from "./components/modal/Modal";
@@ -35,9 +36,11 @@ import {
 
 const SAVED_ARMIES_STORAGE_KEY = "tabletop-battles.saved-armies";
 const DETACHMENTS_STORAGE_KEY = "tabletop-battles.detachments";
+const AUTH_TOKEN_STORAGE_KEY = "tabletop-battles.auth-token";
+const AUTH_PROVIDER_STORAGE_KEY = "tabletop-battles.auth-provider";
 const PHASES = Object.values(Phase) as Phase[];
 
-type AppPage = "battle" | "armies" | "armyRule";
+type AppPage = "battle" | "armies" | "armyRule" | "admin";
 
 const INITIAL_BATTLE_PHASE: BattlePhase = {
   phase: PHASES[0],
@@ -83,6 +86,27 @@ type ChipUndo = {
   undo: () => void;
 };
 
+type AuthAccount = {
+  id: string;
+  provider: AuthProvider;
+  username: string;
+  isAdmin: boolean;
+};
+
+type LocalAuthAccount = Omit<AuthAccount, "provider">;
+
+type AuthProvider = "local" | "neon";
+
+type SessionStatus = "checking" | "logged-in" | "logged-out";
+
+type AdminAccount = {
+  id: string;
+  username: string;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
   {
     id: "bastion-task-force",
@@ -101,6 +125,20 @@ const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
 ];
 
 function App() {
+  const [authToken, setAuthToken] = useState(
+    () => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "",
+  );
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() =>
+    localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || neonAuthEnabled
+      ? "checking"
+      : "logged-out",
+  );
+  const [authProvider, setAuthProvider] = useState<AuthProvider>(() =>
+    localStorage.getItem(AUTH_PROVIDER_STORAGE_KEY) === "neon"
+      ? "neon"
+      : "local",
+  );
+  const [authAccount, setAuthAccount] = useState<AuthAccount | null>(null);
   const [savedArmies, setSavedArmies] = useState<SavedArmy[]>(loadSavedArmies);
   const [detachmentPacks, setDetachmentPacks] =
     useState<DetachmentPack[]>(loadDetachmentPacks);
@@ -166,6 +204,150 @@ function App() {
           removeWeaponKeywordTarget.weaponKey,
         )
       : [];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkSession() {
+      if (authToken) {
+        try {
+          const { account } = await apiRequest<{ account: LocalAuthAccount }>(
+            "/api/session",
+            {
+              token: authToken,
+            },
+          );
+
+          if (!cancelled) {
+            setAuthProvider("local");
+            setAuthAccount({ ...account, provider: "local" });
+            setSessionStatus("logged-in");
+          }
+          return;
+        } catch {
+          localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+          setAuthToken("");
+        }
+      }
+
+      if (neonAuthClient) {
+        const account = await getNeonSessionAccount();
+
+        if (account) {
+          if (!cancelled) {
+            localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
+            setAuthProvider("neon");
+            setAuthAccount(account);
+            setSessionStatus("logged-in");
+          }
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        localStorage.removeItem(AUTH_PROVIDER_STORAGE_KEY);
+        setAuthAccount(null);
+        setSessionStatus("logged-out");
+      }
+    }
+
+    void checkSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
+  async function login(username: string, password: string) {
+    const result = await apiRequest<{ account: AuthAccount; token: string }>(
+      "/api/login",
+      {
+        body: { username, password },
+        method: "POST",
+      },
+    );
+
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, result.token);
+    localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "local");
+    setAuthToken(result.token);
+    setAuthProvider("local");
+    setAuthAccount({ ...result.account, provider: "local" });
+    setSessionStatus("logged-in");
+  }
+
+  async function loginWithNeon(email: string, password: string) {
+    if (!neonAuthClient) {
+      throw new Error("Neon Auth is not configured.");
+    }
+
+    const result = await neonAuthClient.signIn.email({ email, password });
+
+    if (result.error) {
+      throw new Error(result.error.message ?? "Could not sign in.");
+    }
+
+    const account = await getNeonSessionAccount();
+
+    if (!account) {
+      throw new Error("Neon Auth did not return an active session.");
+    }
+
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
+    setAuthToken("");
+    setAuthProvider("neon");
+    setAuthAccount(account);
+    setSessionStatus("logged-in");
+  }
+
+  async function signUpWithNeon(email: string, password: string) {
+    if (!neonAuthClient) {
+      throw new Error("Neon Auth is not configured.");
+    }
+
+    const result = await neonAuthClient.signUp.email({
+      email,
+      name: email.split("@")[0] || "User",
+      password,
+    });
+
+    if (result.error) {
+      throw new Error(result.error.message ?? "Could not create account.");
+    }
+
+    const account = await getNeonSessionAccount();
+
+    if (!account) {
+      throw new Error("Account created. Sign in to continue.");
+    }
+
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    localStorage.setItem(AUTH_PROVIDER_STORAGE_KEY, "neon");
+    setAuthToken("");
+    setAuthProvider("neon");
+    setAuthAccount(account);
+    setSessionStatus("logged-in");
+  }
+
+  async function logout() {
+    if (authProvider === "neon" && neonAuthClient) {
+      await neonAuthClient.signOut().catch(() => undefined);
+    }
+
+    if (authToken) {
+      await apiRequest("/api/logout", {
+        method: "POST",
+        token: authToken,
+      }).catch(() => undefined);
+    }
+
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(AUTH_PROVIDER_STORAGE_KEY);
+    setAuthToken("");
+    setAuthProvider("local");
+    setAuthAccount(null);
+    setSessionStatus("logged-out");
+  }
 
   async function handleRosterFile(file: File | undefined) {
     setError("");
@@ -670,17 +852,42 @@ function App() {
     });
   }
 
+  if (sessionStatus === "checking") {
+    return (
+      <main className="login-shell">
+        <p>Checking session...</p>
+      </main>
+    );
+  }
+
+  if (sessionStatus === "logged-out") {
+    return (
+      <LoginScreen
+        neonAuthEnabled={neonAuthEnabled}
+        onLocalLogin={login}
+        onNeonLogin={loginWithNeon}
+        onNeonSignUp={signUpWithNeon}
+      />
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className="toolbar">
         <div>
           <h1>
-            {page === "armies" ? "Armies" : activeArmy?.name || "Army Units"}
+            {page === "armies"
+              ? "Armies"
+              : page === "admin"
+                ? "Admin"
+                : activeArmy?.name || "Army Units"}
           </h1>
           <p>
             {page === "armies"
               ? `${savedArmies.length} saved armies`
-              : page === "armyRule"
+              : page === "admin"
+                ? `Logged in as ${authAccount?.username}`
+                : page === "armyRule"
                 ? getSelectedArmyRuleChoice(activeArmy)?.name ||
                   "Choose an army rule"
                 : activeArmy?.sourceFileName ||
@@ -756,6 +963,18 @@ function App() {
               >
                 Detachments
               </button>
+              {authAccount?.isAdmin && (
+                <button
+                  className="menu-item"
+                  type="button"
+                  onClick={() => {
+                    setPage("admin");
+                    setMenuOpen(false);
+                  }}
+                >
+                  Admin
+                </button>
+              )}
               <label className="menu-item">
                 <input
                   accept="application/json,.json"
@@ -766,6 +985,16 @@ function App() {
                 />
                 Import JSON
               </label>
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void logout();
+                }}
+              >
+                Log Out
+              </button>
             </div>
           )}
         </div>
@@ -783,6 +1012,8 @@ function App() {
         />
       ) : page === "armyRule" ? (
         <ArmyRulePage army={activeArmy} onChooseArmyRule={chooseArmyRule} />
+      ) : page === "admin" ? (
+        <AdminDatabasePage authToken={authToken} />
       ) : (
         <>
           {!firstTurnOwner && (
@@ -998,6 +1229,310 @@ function App() {
         onReset={() => setBattlePhase(getInitialBattlePhase(turnOwners))}
       />
     </main>
+  );
+}
+
+type LoginScreenProps = {
+  neonAuthEnabled: boolean;
+  onLocalLogin: (username: string, password: string) => Promise<void>;
+  onNeonLogin: (email: string, password: string) => Promise<void>;
+  onNeonSignUp: (email: string, password: string) => Promise<void>;
+};
+
+function LoginScreen({
+  neonAuthEnabled,
+  onLocalLogin,
+  onNeonLogin,
+  onNeonSignUp,
+}: LoginScreenProps) {
+  const [mode, setMode] = useState<AuthProvider>(
+    neonAuthEnabled ? "neon" : "local",
+  );
+  const [username, setUsername] = useState(neonAuthEnabled ? "" : "admin");
+  const [password, setPassword] = useState("admin");
+  const [error, setError] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isNeonMode = mode === "neon";
+
+  return (
+    <main className="login-shell">
+      <form
+        className="login-panel"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setError("");
+          setIsSubmitting(true);
+          const submit = isNeonMode
+            ? isSignUp
+              ? onNeonSignUp(username, password)
+              : onNeonLogin(username, password)
+            : onLocalLogin(username, password);
+
+          submit
+            .catch((loginError: Error) => setError(loginError.message))
+            .finally(() => setIsSubmitting(false));
+        }}
+      >
+        <div>
+          <h1>Tabletop Battles</h1>
+          <p>Log in to continue.</p>
+        </div>
+        {neonAuthEnabled && (
+          <div className="login-mode-tabs" role="tablist" aria-label="Login type">
+            <button
+              aria-selected={mode === "neon"}
+              onClick={() => {
+                setMode("neon");
+                setUsername("");
+                setPassword("");
+                setError("");
+              }}
+              role="tab"
+              type="button"
+            >
+              Neon
+            </button>
+            <button
+              aria-selected={mode === "local"}
+              onClick={() => {
+                setMode("local");
+                setUsername("admin");
+                setPassword("admin");
+                setError("");
+              }}
+              role="tab"
+              type="button"
+            >
+              Local Admin
+            </button>
+          </div>
+        )}
+        <label>
+          <span>{isNeonMode ? "Email" : "Username"}</span>
+          <input
+            autoComplete={isNeonMode ? "email" : "username"}
+            type={isNeonMode ? "email" : "text"}
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>Password</span>
+          <input
+            autoComplete="current-password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+        {error && <p className="error-message">{error}</p>}
+        <button disabled={isSubmitting} type="submit">
+          {isSubmitting
+            ? isSignUp && isNeonMode
+              ? "Creating..."
+              : "Logging in..."
+            : isSignUp && isNeonMode
+              ? "Create Account"
+              : "Log In"}
+        </button>
+        {isNeonMode && (
+          <button
+            className="login-link-button"
+            onClick={() => {
+              setError("");
+              setIsSignUp((current) => !current);
+            }}
+            type="button"
+          >
+            {isSignUp
+              ? "Already have a Neon account? Log in"
+              : "Need a Neon account? Create one"}
+          </button>
+        )}
+      </form>
+    </main>
+  );
+}
+
+function AdminDatabasePage({ authToken }: { authToken: string }) {
+  const [accounts, setAccounts] = useState<AdminAccount[]>([]);
+  const [error, setError] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newIsAdmin, setNewIsAdmin] = useState(false);
+  const isLocal = isLocalApp();
+
+  const loadAccounts = useCallback(async () => {
+    setError("");
+    try {
+      const result = await apiRequest<{ accounts: AdminAccount[] }>(
+        "/api/admin/accounts",
+        { token: authToken },
+      );
+      setAccounts(result.accounts);
+    } catch (loadError) {
+      setError((loadError as Error).message);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadAccounts();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [loadAccounts]);
+
+  async function createAccount() {
+    setError("");
+    try {
+      await apiRequest("/api/admin/accounts", {
+        body: {
+          username: newUsername,
+          password: newPassword,
+          isAdmin: newIsAdmin,
+        },
+        method: "POST",
+        token: authToken,
+      });
+      setNewUsername("");
+      setNewPassword("");
+      setNewIsAdmin(false);
+      await loadAccounts();
+    } catch (createError) {
+      setError((createError as Error).message);
+    }
+  }
+
+  async function updateAccount(account: AdminAccount, password: string) {
+    setError("");
+    try {
+      await apiRequest(`/api/admin/accounts/${account.id}`, {
+        body: {
+          username: account.username,
+          password,
+          isAdmin: account.is_admin,
+        },
+        method: "PUT",
+        token: authToken,
+      });
+      await loadAccounts();
+    } catch (updateError) {
+      setError((updateError as Error).message);
+    }
+  }
+
+  async function deleteAccount(accountId: string) {
+    setError("");
+    try {
+      await apiRequest(`/api/admin/accounts/${accountId}`, {
+        method: "DELETE",
+        token: authToken,
+      });
+      await loadAccounts();
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    }
+  }
+
+  return (
+    <section className="admin-page" aria-label="Database admin">
+      {error && <p className="error-message">{error}</p>}
+      <article className="admin-card">
+        <h2>Accounts</h2>
+        {isLocal ? (
+          <div className="admin-create-row">
+            <input
+              placeholder="Username"
+              value={newUsername}
+              onChange={(event) => setNewUsername(event.target.value)}
+            />
+            <input
+              placeholder="Password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+            />
+            <label>
+              <input
+                checked={newIsAdmin}
+                type="checkbox"
+                onChange={(event) => setNewIsAdmin(event.target.checked)}
+              />
+              Admin
+            </label>
+            <button
+              disabled={!newUsername.trim() || !newPassword}
+              type="button"
+              onClick={() => void createAccount()}
+            >
+              Create
+            </button>
+          </div>
+        ) : (
+          <p className="admin-note">Account creation is only available locally.</p>
+        )}
+        <div className="admin-account-list">
+          {accounts.map((account) => (
+            <AdminAccountRow
+              account={account}
+              key={account.id}
+              onDelete={() => void deleteAccount(account.id)}
+              onSave={(nextAccount, password) =>
+                void updateAccount(nextAccount, password)
+              }
+            />
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+type AdminAccountRowProps = {
+  account: AdminAccount;
+  onDelete: () => void;
+  onSave: (account: AdminAccount, password: string) => void;
+};
+
+function AdminAccountRow({ account, onDelete, onSave }: AdminAccountRowProps) {
+  const [username, setUsername] = useState(account.username);
+  const [isAdmin, setIsAdmin] = useState(account.is_admin);
+  const [password, setPassword] = useState("");
+
+  return (
+    <article className="admin-account-row">
+      <input
+        value={username}
+        onChange={(event) => setUsername(event.target.value)}
+      />
+      <input
+        placeholder="New password"
+        type="password"
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+      />
+      <label>
+        <input
+          checked={isAdmin}
+          type="checkbox"
+          onChange={(event) => setIsAdmin(event.target.checked)}
+        />
+        Admin
+      </label>
+      <button
+        type="button"
+        onClick={() =>
+          onSave({ ...account, username, is_admin: isAdmin }, password)
+        }
+      >
+        Save
+      </button>
+      <button type="button" onClick={onDelete}>
+        Delete
+      </button>
+    </article>
   );
 }
 
@@ -2093,6 +2628,62 @@ function restoreWeaponKeywordOverride(
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase();
+}
+
+type ApiOptions = {
+  body?: unknown;
+  method?: string;
+  token?: string;
+};
+
+async function apiRequest<T = unknown>(
+  path: string,
+  { body, method = "GET", token }: ApiOptions = {},
+): Promise<T> {
+  const response = await fetch(path, {
+    body: body ? JSON.stringify(body) : undefined,
+    headers: {
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    method,
+  });
+
+  const responseBody = response.status === 204 ? null : await response.json();
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error ?? "Request failed");
+  }
+
+  return responseBody as T;
+}
+
+function isLocalApp() {
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  );
+}
+
+async function getNeonSessionAccount(): Promise<AuthAccount | null> {
+  if (!neonAuthClient) {
+    return null;
+  }
+
+  const result = await neonAuthClient.getSession();
+  const session = result.data?.session;
+  const user = result.data?.user;
+
+  if (!session || !user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    isAdmin: false,
+    provider: "neon",
+    username: user.email || user.name || "Neon user",
+  };
 }
 
 export default App;

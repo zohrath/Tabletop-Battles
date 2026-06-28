@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tabletop-battles-postgres
+    environment:
+      POSTGRES_DB: tabletop_battles
+      POSTGRES_USER: tabletop
+      POSTGRES_PASSWORD: tabletop
+    ports:
+      - "5436:5432"
+    volumes:
+      - tabletop-battles-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tabletop -d tabletop_battles"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tabletop-battles-postgres:
