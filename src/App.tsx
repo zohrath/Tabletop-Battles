@@ -107,6 +107,10 @@ type AdminAccount = {
   updated_at: string;
 };
 
+type ArmyListsResponse = {
+  armies: SavedArmy[];
+};
+
 const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
   {
     id: "bastion-task-force",
@@ -182,6 +186,80 @@ function App() {
     detachmentStratagems,
     battlePhase,
   );
+
+  useEffect(() => {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadDatabaseArmies() {
+      try {
+        const { armies } = await apiRequest<ArmyListsResponse>(
+          "/api/army-lists",
+          {
+            token: authToken,
+          },
+        );
+        const normalizedArmies = normalizeSavedArmies(armies);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (normalizedArmies.length > 0) {
+          setSavedArmies(normalizedArmies);
+          localStorage.setItem(
+            SAVED_ARMIES_STORAGE_KEY,
+            JSON.stringify(normalizedArmies),
+          );
+          setActiveArmyId((currentArmyId) =>
+            normalizedArmies.some((army) => army.id === currentArmyId)
+              ? currentArmyId
+              : normalizedArmies[0]?.id ?? "",
+          );
+          return;
+        }
+
+        const localArmies = loadSavedArmies();
+
+        if (localArmies.length === 0) {
+          return;
+        }
+
+        const imported = await apiRequest<ArmyListsResponse>("/api/army-lists", {
+          body: { armies: localArmies },
+          method: "POST",
+          token: authToken,
+        });
+        const importedArmies = normalizeSavedArmies(imported.armies);
+
+        if (!cancelled) {
+          setSavedArmies(importedArmies);
+          localStorage.setItem(
+            SAVED_ARMIES_STORAGE_KEY,
+            JSON.stringify(importedArmies),
+          );
+          setActiveArmyId((currentArmyId) =>
+            importedArmies.some((army) => army.id === currentArmyId)
+              ? currentArmyId
+              : importedArmies[0]?.id ?? "",
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Could not sync saved armies. Using browser storage.");
+        }
+      }
+    }
+
+    void loadDatabaseArmies();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, sessionStatus]);
   const hasVisibleStratagems =
     visibleCoreStratagems.length > 0 || visibleDetachmentStratagems.length > 0;
   const addAbilityUnit = getSavedUnit(activeArmy, addAbilityUnitId);
@@ -433,6 +511,7 @@ function App() {
   }
 
   function deleteArmy(armyId: string) {
+    void deleteSavedArmyFromDatabase(armyId);
     updateSavedArmies((currentArmies) => {
       const nextArmies = currentArmies.filter((army) => army.id !== armyId);
 
@@ -848,8 +927,32 @@ function App() {
         SAVED_ARMIES_STORAGE_KEY,
         JSON.stringify(nextArmies),
       );
+      void syncSavedArmiesToDatabase(nextArmies);
       return nextArmies;
     });
+  }
+
+  async function syncSavedArmiesToDatabase(nextArmies: SavedArmy[]) {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    await apiRequest("/api/army-lists", {
+      body: { armies: nextArmies },
+      method: "POST",
+      token: authToken,
+    }).catch(() => undefined);
+  }
+
+  async function deleteSavedArmyFromDatabase(armyId: string) {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    await apiRequest(`/api/army-lists/${armyId}`, {
+      method: "DELETE",
+      token: authToken,
+    }).catch(() => undefined);
   }
 
   if (sessionStatus === "checking") {
@@ -2382,7 +2485,14 @@ function loadSavedArmies(): SavedArmy[] {
       ? (JSON.parse(savedArmies) as SavedArmy[])
       : [];
 
-    return parsedArmies.map((army) => ({
+    return normalizeSavedArmies(parsedArmies);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSavedArmies(armies: SavedArmy[]): SavedArmy[] {
+  return armies.map((army) => ({
       ...army,
       armyRules: army.armyRules ?? [],
       units: (army.units ?? []).map((unit) => ({
@@ -2400,9 +2510,6 @@ function loadSavedArmies(): SavedArmy[] {
         ),
       })),
     }));
-  } catch {
-    return [];
-  }
 }
 
 function loadDetachmentPacks(): DetachmentPack[] {

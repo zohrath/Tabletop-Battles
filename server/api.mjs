@@ -55,6 +55,17 @@ export async function handleApiRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/army-lists") {
+      await handleArmyLists(request, response);
+      return;
+    }
+
+    const armyListMatch = url.pathname.match(/^\/api\/army-lists\/([^/]+)$/);
+    if (armyListMatch) {
+      await handleArmyList(request, response, armyListMatch[1]);
+      return;
+    }
+
     const accountMatch = url.pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
     if (accountMatch) {
       await handleAccount(request, response, accountMatch[1]);
@@ -354,6 +365,89 @@ async function handleAccount(request, response, accountId) {
   sendJson(response, 405, { error: "Method not allowed" });
 }
 
+async function handleArmyLists(request, response) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "GET") {
+    const result = await pool.query(
+      `select roster_json
+       from army_lists
+       where user_id = $1
+       order by imported_at desc, created_at desc`,
+      [appUser.id],
+    );
+    sendJson(response, 200, {
+      armies: result.rows.map((row) => row.roster_json),
+    });
+    return;
+  }
+
+  if (request.method === "POST") {
+    const body = await readJson(request);
+    const armies = Array.isArray(body.armies)
+      ? body.armies
+      : body.army
+        ? [body.army]
+        : [];
+
+    if (armies.length === 0) {
+      throw httpError(400, "At least one army is required");
+    }
+
+    for (const army of armies) {
+      await upsertArmyList(appUser.id, army);
+    }
+
+    const result = await pool.query(
+      `select roster_json
+       from army_lists
+       where user_id = $1
+       order by imported_at desc, created_at desc`,
+      [appUser.id],
+    );
+    sendJson(response, 200, {
+      armies: result.rows.map((row) => row.roster_json),
+    });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
+async function handleArmyList(request, response, armyListId) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "PUT") {
+    const body = await readJson(request);
+    await upsertArmyList(appUser.id, body.army);
+
+    const result = await pool.query(
+      `select roster_json
+       from army_lists
+       where id = $1 and user_id = $2`,
+      [armyListId, appUser.id],
+    );
+
+    if (result.rowCount === 0) {
+      throw httpError(404, "Army list not found");
+    }
+
+    sendJson(response, 200, { army: result.rows[0].roster_json });
+    return;
+  }
+
+  if (request.method === "DELETE") {
+    await pool.query("delete from army_lists where id = $1 and user_id = $2", [
+      armyListId,
+      appUser.id,
+    ]);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
 async function handleDatabaseStatus(request, response) {
   await requireAdmin(request);
 
@@ -419,6 +513,126 @@ async function requireAdmin(request) {
   }
 
   return account;
+}
+
+async function requireAppUser(request) {
+  const account = await requireAccount(request);
+  await ensureLocalAccountAppUsers();
+
+  const result = await pool.query(
+    "select * from app_users where local_account_id = $1",
+    [account.id],
+  );
+  const appUser = result.rows[0];
+
+  if (!appUser) {
+    throw httpError(401, "App user not found");
+  }
+
+  return appUser;
+}
+
+async function upsertArmyList(userId, army) {
+  const normalizedArmy = normalizeArmyListPayload(army);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    const upsertResult = await client.query(
+      `insert into army_lists
+        (
+          id,
+          user_id,
+          name,
+          source_file_name,
+          imported_at,
+          selected_detachment_id,
+          selected_army_rule_choice_id,
+          roster_json
+        )
+       values ($1, $2, $3, $4, $5, null, $6, $7)
+       on conflict (id)
+       do update set
+         name = excluded.name,
+         source_file_name = excluded.source_file_name,
+         imported_at = excluded.imported_at,
+         selected_detachment_id = excluded.selected_detachment_id,
+         selected_army_rule_choice_id = excluded.selected_army_rule_choice_id,
+         roster_json = excluded.roster_json,
+         updated_at = now()
+       where army_lists.user_id = excluded.user_id
+       returning id`,
+      [
+        normalizedArmy.id,
+        userId,
+        normalizedArmy.name,
+        normalizedArmy.sourceFileName,
+        normalizedArmy.importedAt,
+        normalizedArmy.selectedArmyRuleChoiceId ?? null,
+        normalizedArmy,
+      ],
+    );
+
+    if (upsertResult.rowCount === 0) {
+      throw httpError(409, "Army list id already exists for another user");
+    }
+
+    await client.query(
+      `delete from army_list_units
+       using army_lists
+       where army_list_units.army_list_id = army_lists.id
+         and army_lists.id = $1
+         and army_lists.user_id = $2`,
+      [normalizedArmy.id, userId],
+    );
+
+    for (const unit of normalizedArmy.units) {
+      await client.query(
+        `insert into army_list_units
+          (id, army_list_id, source_unit_id, name, unit_json)
+         values ($1, $2, $3, $4, $5)`,
+        [
+          randomUUID(),
+          normalizedArmy.id,
+          String(unit.id),
+          String(unit.name || "Unnamed Unit"),
+          unit,
+        ],
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function normalizeArmyListPayload(army) {
+  if (!army || typeof army !== "object") {
+    throw httpError(400, "Army list is required");
+  }
+
+  const id = String(army.id ?? "");
+  const name = String(army.name ?? "").trim();
+  const importedAt = String(army.importedAt ?? "");
+
+  if (!id || !name || !importedAt) {
+    throw httpError(400, "Army list id, name, and importedAt are required");
+  }
+
+  return {
+    id,
+    armyRules: Array.isArray(army.armyRules) ? army.armyRules : [],
+    importedAt,
+    name,
+    selectedArmyRuleChoiceId: army.selectedArmyRuleChoiceId || undefined,
+    selectedDetachmentId: army.selectedDetachmentId || undefined,
+    sourceFileName: String(army.sourceFileName ?? ""),
+    units: Array.isArray(army.units) ? army.units : [],
+  };
 }
 
 async function ensureLocalAccountAppUsers() {
