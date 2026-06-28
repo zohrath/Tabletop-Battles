@@ -615,62 +615,6 @@ function App() {
     );
   }
 
-  function chooseDetachment(detachmentId: string) {
-    if (!activeArmy) {
-      return;
-    }
-
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) =>
-        army.id === activeArmy.id
-          ? { ...army, selectedDetachmentId: detachmentId || undefined }
-          : army,
-      ),
-    );
-  }
-
-  function updateDetachmentPack(nextDetachment: DetachmentPack) {
-    updateDetachmentPacks((currentDetachments) => {
-      const existingIndex = currentDetachments.findIndex(
-        (detachment) => detachment.id === nextDetachment.id,
-      );
-
-      if (existingIndex === -1) {
-        return [...currentDetachments, nextDetachment];
-      }
-
-      return currentDetachments.map((detachment) =>
-        detachment.id === nextDetachment.id ? nextDetachment : detachment,
-      );
-    });
-  }
-
-  function createDetachmentPack() {
-    const id = createId();
-
-    updateDetachmentPack({
-      id,
-      name: "New Detachment",
-      detachmentRule: "",
-      enhancements: "",
-      stratagems: [],
-    });
-  }
-
-  function deleteDetachmentPack(detachmentId: string) {
-    void deleteDetachmentFromDatabase(detachmentId);
-    updateDetachmentPacks((currentDetachments) =>
-      currentDetachments.filter((detachment) => detachment.id !== detachmentId),
-    );
-    updateSavedArmies((currentArmies) =>
-      currentArmies.map((army) =>
-        army.selectedDetachmentId === detachmentId
-          ? { ...army, selectedDetachmentId: undefined }
-          : army,
-      ),
-    );
-  }
-
   function updateDetachmentPacks(
     getNextDetachments: (
       currentDetachments: DetachmentPack[],
@@ -685,6 +629,33 @@ function App() {
       void syncDetachmentsToDatabase(nextDetachments);
       return nextDetachments;
     });
+  }
+
+  function saveDetachmentEditor(
+    nextDetachments: DetachmentPack[],
+    selectedDetachmentId: string,
+    deletedDetachmentIds: string[],
+  ) {
+    deletedDetachmentIds.forEach((detachmentId) => {
+      void deleteDetachmentFromDatabase(detachmentId);
+    });
+
+    updateDetachmentPacks(() => nextDetachments);
+
+    if (activeArmy) {
+      updateSavedArmies((currentArmies) =>
+        currentArmies.map((army) =>
+          army.id === activeArmy.id
+            ? {
+                ...army,
+                selectedDetachmentId: selectedDetachmentId || undefined,
+              }
+            : army,
+        ),
+      );
+    }
+
+    setDetachmentEditorOpen(false);
   }
 
   async function syncDetachmentsToDatabase(nextDetachments: DetachmentPack[]) {
@@ -1320,10 +1291,8 @@ function App() {
           <DetachmentEditor
             activeArmy={activeArmy}
             detachmentPacks={detachmentPacks}
-            onCreateDetachment={createDetachmentPack}
-            onDeleteDetachment={deleteDetachmentPack}
-            onSelectDetachment={chooseDetachment}
-            onUpdateDetachment={updateDetachmentPack}
+            onCancel={() => setDetachmentEditorOpen(false)}
+            onSave={saveDetachmentEditor}
           />
         </Modal>
       )}
@@ -1961,21 +1930,70 @@ function SelectedDetachmentChip({
 type DetachmentEditorProps = {
   activeArmy: SavedArmy | null;
   detachmentPacks: DetachmentPack[];
-  onCreateDetachment: () => void;
-  onDeleteDetachment: (detachmentId: string) => void;
-  onSelectDetachment: (detachmentId: string) => void;
-  onUpdateDetachment: (detachment: DetachmentPack) => void;
+  onCancel: () => void;
+  onSave: (
+    detachmentPacks: DetachmentPack[],
+    selectedDetachmentId: string,
+    deletedDetachmentIds: string[],
+  ) => void;
 };
 
 function DetachmentEditor({
   activeArmy,
   detachmentPacks,
-  onCreateDetachment,
-  onDeleteDetachment,
-  onSelectDetachment,
-  onUpdateDetachment,
+  onCancel,
+  onSave,
 }: DetachmentEditorProps) {
   const [detachmentSelectorOpen, setDetachmentSelectorOpen] = useState(false);
+  const [draftDetachments, setDraftDetachments] = useState(() =>
+    detachmentPacks.map(cloneDetachmentPack),
+  );
+  const [draftSelectedDetachmentId, setDraftSelectedDetachmentId] = useState(
+    () => activeArmy?.selectedDetachmentId ?? "",
+  );
+  const [deletedDetachmentIds, setDeletedDetachmentIds] = useState<string[]>([]);
+  const selectedDraftDetachment =
+    draftDetachments.find(
+      (detachment) => detachment.id === draftSelectedDetachmentId,
+    ) ?? null;
+
+  function createDraftDetachment() {
+    const id = createId();
+    setDraftDetachments((currentDetachments) => [
+      ...currentDetachments,
+      {
+        id,
+        name: "New Detachment",
+        detachmentRule: "",
+        enhancements: "",
+        stratagems: [],
+      },
+    ]);
+    setDraftSelectedDetachmentId(id);
+  }
+
+  function updateDraftDetachment(nextDetachment: DetachmentPack) {
+    setDraftDetachments((currentDetachments) =>
+      currentDetachments.map((detachment) =>
+        detachment.id === nextDetachment.id ? nextDetachment : detachment,
+      ),
+    );
+  }
+
+  function deleteDraftDetachment(detachmentId: string) {
+    setDraftDetachments((currentDetachments) =>
+      currentDetachments.filter((detachment) => detachment.id !== detachmentId),
+    );
+    setDeletedDetachmentIds((currentIds) =>
+      currentIds.includes(detachmentId)
+        ? currentIds
+        : [...currentIds, detachmentId],
+    );
+
+    if (draftSelectedDetachmentId === detachmentId) {
+      setDraftSelectedDetachmentId("");
+    }
+  }
 
   return (
     <section className="detachment-editor">
@@ -1988,8 +2006,11 @@ function DetachmentEditor({
           type="button"
           onClick={() => setDetachmentSelectorOpen((isOpen) => !isOpen)}
         >
-          {getSelectedDetachmentName(activeArmy, detachmentPacks)}
-          </button>
+          {getDraftSelectedDetachmentName(
+            draftSelectedDetachmentId,
+            draftDetachments,
+          )}
+        </button>
         {detachmentSelectorOpen && (
           <div
             aria-label="Current army detachment options"
@@ -2002,21 +2023,21 @@ function DetachmentEditor({
               role="option"
               type="button"
               onClick={() => {
-                onSelectDetachment("");
+                setDraftSelectedDetachmentId("");
                 setDetachmentSelectorOpen(false);
               }}
             >
               None selected
             </button>
-            {detachmentPacks.map((detachment) => (
+            {draftDetachments.map((detachment) => (
               <button
-                aria-selected={activeArmy?.selectedDetachmentId === detachment.id}
+                aria-selected={draftSelectedDetachmentId === detachment.id}
                 disabled={!activeArmy}
                 key={detachment.id}
                 role="option"
                 type="button"
                 onClick={() => {
-                  onSelectDetachment(detachment.id);
+                  setDraftSelectedDetachmentId(detachment.id);
                   setDetachmentSelectorOpen(false);
                 }}
               >
@@ -2027,35 +2048,55 @@ function DetachmentEditor({
         )}
       </div>
 
-      <button type="button" onClick={onCreateDetachment}>
+      <button type="button" onClick={createDraftDetachment}>
         Add Detachment
       </button>
 
-      <div className="detachment-list">
-        {detachmentPacks.map((detachment) => (
+      {selectedDraftDetachment ? (
+        <div className="detachment-list">
           <DetachmentEditorCard
-            detachment={detachment}
-            key={detachment.id}
-            onDeleteDetachment={onDeleteDetachment}
-            onUpdateDetachment={onUpdateDetachment}
+            detachment={selectedDraftDetachment}
+            key={selectedDraftDetachment.id}
+            onDeleteDetachment={deleteDraftDetachment}
+            onUpdateDetachment={updateDraftDetachment}
           />
-        ))}
+        </div>
+      ) : (
+        <p className="empty-state">No detachment selected.</p>
+      )}
+
+      <div className="detachment-editor-footer">
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onSave(
+              draftDetachments.map(cloneDetachmentPack),
+              draftSelectedDetachmentId,
+              deletedDetachmentIds,
+            )
+          }
+        >
+          Save
+        </button>
       </div>
     </section>
   );
 }
 
-function getSelectedDetachmentName(
-  activeArmy: SavedArmy | null,
+function getDraftSelectedDetachmentName(
+  selectedDetachmentId: string,
   detachmentPacks: DetachmentPack[],
 ) {
-  if (!activeArmy?.selectedDetachmentId) {
+  if (!selectedDetachmentId) {
     return "None selected";
   }
 
   return (
     detachmentPacks.find(
-      (detachment) => detachment.id === activeArmy.selectedDetachmentId,
+      (detachment) => detachment.id === selectedDetachmentId,
     )?.name ?? "None selected"
   );
 }
@@ -2640,6 +2681,13 @@ function mergeBuiltInDetachments(savedDetachments: DetachmentPack[]) {
     .map(normalizeDetachmentPack);
 
   return [...mergedBuiltIns, ...customDetachments];
+}
+
+function cloneDetachmentPack(detachment: DetachmentPack): DetachmentPack {
+  return {
+    ...detachment,
+    stratagems: detachment.stratagems.map((stratagem) => ({ ...stratagem })),
+  };
 }
 
 function normalizeDetachmentPack(detachment: DetachmentPack): DetachmentPack {

@@ -826,6 +826,14 @@
   border-color: var(--accent-border);
 }
 
+.detachment-editor-footer {
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
 .detachment-editor button:focus-visible,
 .detachment-editor input:focus-visible,
 .detachment-editor select:focus-visible,
