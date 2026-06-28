@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
 import http from "node:http";
-import { URL } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -9,7 +10,10 @@ const databaseUrl =
   process.env.DATABASE_URL ??
   "postgres://tabletop:tabletop@localhost:5436/tabletop_battles";
 const pool = new Pool({ connectionString: databaseUrl });
-const schemaReady = ensureSchema();
+const migrationsDirectory = fileURLToPath(
+  new URL("../db/migrations", import.meta.url),
+);
+const schemaReady = initializeDatabase();
 
 export function createApiServer() {
   return http.createServer(handleApiRequest);
@@ -46,6 +50,11 @@ export async function handleApiRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/admin/database") {
+      await handleDatabaseStatus(request, response);
+      return;
+    }
+
     const accountMatch = url.pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
     if (accountMatch) {
       await handleAccount(request, response, accountMatch[1]);
@@ -64,28 +73,110 @@ export async function handleApiRequest(request, response) {
   }
 }
 
-async function ensureSchema() {
+async function initializeDatabase() {
+  await runMigrations();
+  await seedDefaultAdmin();
+  await ensureLocalAccountAppUsers();
+}
+
+async function runMigrations() {
   await pool.query(`
-    create table if not exists accounts (
-      id text primary key,
-      username text not null unique,
-      password_hash text not null,
-      password_salt text not null,
-      is_admin boolean not null default false,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
+    create table if not exists schema_history (
+      version integer primary key,
+      description text not null,
+      script text not null unique,
+      checksum text not null,
+      installed_at timestamptz not null default now()
     )
   `);
 
-  await pool.query(`
-    create table if not exists account_sessions (
-      token_hash text primary key,
-      account_id text not null references accounts(id) on delete cascade,
-      created_at timestamptz not null default now(),
-      expires_at timestamptz not null
-    )
-  `);
+  const migrations = await getMigrations();
 
+  for (const migration of migrations) {
+    const existing = await pool.query(
+      "select checksum from schema_history where version = $1",
+      [migration.version],
+    );
+
+    if (existing.rowCount > 0) {
+      if (existing.rows[0].checksum !== migration.checksum) {
+        throw new Error(
+          `Migration checksum mismatch for ${migration.script}. Create a new migration instead of editing an applied one.`,
+        );
+      }
+
+      continue;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("begin");
+      await client.query(migration.sql);
+      await client.query(
+        `insert into schema_history
+          (version, description, script, checksum)
+         values ($1, $2, $3, $4)`,
+        [
+          migration.version,
+          migration.description,
+          migration.script,
+          migration.checksum,
+        ],
+      );
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+async function getMigrations() {
+  const migrationFiles = (await readdir(migrationsDirectory))
+    .filter((fileName) => /^V\d+__[a-z0-9_]+\.sql$/i.test(fileName))
+    .sort((left, right) => getMigrationVersion(left) - getMigrationVersion(right));
+
+  const migrations = await Promise.all(
+    migrationFiles.map(async (script) => {
+      const sql = await readFile(
+        new URL(`../db/migrations/${script}`, import.meta.url),
+        "utf8",
+      );
+
+      return {
+        checksum: createHash("sha256").update(sql).digest("hex"),
+        description: script
+          .replace(/^V\d+__/, "")
+          .replace(/\.sql$/i, "")
+          .replace(/_/g, " "),
+        script,
+        sql,
+        version: getMigrationVersion(script),
+      };
+    }),
+  );
+
+  const versions = new Set();
+
+  for (const migration of migrations) {
+    if (versions.has(migration.version)) {
+      throw new Error(`Duplicate migration version ${migration.version}.`);
+    }
+
+    versions.add(migration.version);
+  }
+
+  return migrations;
+}
+
+function getMigrationVersion(script) {
+  return Number(script.match(/^V(\d+)__/i)?.[1] ?? 0);
+}
+
+async function seedDefaultAdmin() {
   const existingAdmin = await pool.query(
     "select id from accounts where username = $1",
     ["admin"],
@@ -180,6 +271,7 @@ async function handleAccounts(request, response) {
        returning id, username, is_admin, created_at, updated_at`,
       [randomUUID(), username, hashed.hash, hashed.salt, isAdmin],
     );
+    await ensureLocalAccountAppUsers();
     sendJson(response, 201, { account: result.rows[0], currentAccount: account });
     return;
   }
@@ -231,6 +323,7 @@ async function handleAccount(request, response, accountId) {
        from accounts where id = $1`,
       [accountId],
     );
+    await ensureLocalAccountAppUsers();
     sendJson(response, 200, { account: result.rows[0] });
     return;
   }
@@ -259,6 +352,39 @@ async function handleAccount(request, response, accountId) {
   }
 
   sendJson(response, 405, { error: "Method not allowed" });
+}
+
+async function handleDatabaseStatus(request, response) {
+  await requireAdmin(request);
+
+  if (request.method !== "GET") {
+    sendJson(response, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  const tableNames = [
+    "accounts",
+    "account_sessions",
+    "app_users",
+    "factions",
+    "detachments",
+    "detachment_stratagems",
+    "army_lists",
+    "army_list_units",
+    "army_list_unit_overrides",
+    "user_preferences",
+    "schema_history",
+  ];
+  const counts = {};
+
+  for (const tableName of tableNames) {
+    const result = await pool.query(
+      `select count(*)::int as count from ${tableName}`,
+    );
+    counts[tableName] = result.rows[0].count;
+  }
+
+  sendJson(response, 200, { counts });
 }
 
 async function requireAccount(request) {
@@ -293,6 +419,26 @@ async function requireAdmin(request) {
   }
 
   return account;
+}
+
+async function ensureLocalAccountAppUsers() {
+  const result = await pool.query(
+    "select id, username, is_admin from accounts order by username asc",
+  );
+
+  for (const account of result.rows) {
+    await pool.query(
+      `insert into app_users
+        (id, local_account_id, display_name, is_admin)
+       values ($1, $2, $3, $4)
+       on conflict (local_account_id)
+       do update set
+         display_name = excluded.display_name,
+         is_admin = excluded.is_admin,
+         updated_at = now()`,
+      [randomUUID(), account.id, account.username, account.is_admin],
+    );
+  }
 }
 
 function getBearerToken(request) {
