@@ -16,7 +16,9 @@ import { StatsGrid } from "../statsGrid/StatsGrid";
 import { Carriers } from "./WeaponStatus.styles";
 
 export function WeaponStatus({
+  onAddWeaponKeyword,
   onKeywordSelect,
+  onRemoveWeaponKeyword,
   onWeaponSelect,
   unit,
 }: WeaponStatusProps) {
@@ -39,6 +41,8 @@ export function WeaponStatus({
         weapons={rangedWeapons}
         onWeaponSelect={onWeaponSelect}
         onKeywordSelect={onKeywordSelect}
+        onAddWeaponKeyword={onAddWeaponKeyword}
+        onRemoveWeaponKeyword={onRemoveWeaponKeyword}
         showPistolContext
       />
       <WeaponGroup
@@ -46,6 +50,8 @@ export function WeaponStatus({
         weapons={meleeWeapons}
         onWeaponSelect={onWeaponSelect}
         onKeywordSelect={onKeywordSelect}
+        onAddWeaponKeyword={onAddWeaponKeyword}
+        onRemoveWeaponKeyword={onRemoveWeaponKeyword}
       />
     </div>
   );
@@ -53,7 +59,9 @@ export function WeaponStatus({
 
 function WeaponGroup({
   label,
+  onAddWeaponKeyword,
   onKeywordSelect,
+  onRemoveWeaponKeyword,
   onWeaponSelect,
   showPistolContext = false,
   weapons,
@@ -82,7 +90,12 @@ function WeaponGroup({
                 stats={getWeaponStats(weapon, { scaleAttacks: true })}
               />
             </button>
-            <WeaponKeywords weapon={weapon} onKeywordSelect={onKeywordSelect} />
+            <WeaponKeywords
+              weapon={weapon}
+              onAddKeyword={() => onAddWeaponKeyword(getWeaponKey(weapon))}
+              onKeywordSelect={onKeywordSelect}
+              onRemoveKeyword={() => onRemoveWeaponKeyword(getWeaponKey(weapon))}
+            />
           </li>
         ))}
       </ul>
@@ -103,38 +116,66 @@ function RangedWeaponHint({ weapons }: RangedWeaponHintProps) {
 }
 
 export function WeaponKeywords({
+  onAddKeyword,
   onKeywordSelect,
+  onRemoveKeyword,
   weapon,
 }: WeaponKeywordsProps) {
   const keywords = getWeaponKeywords(weapon);
-
-  if (keywords.length === 0) {
-    return null;
-  }
+  const canEditKeywords = Boolean(onAddKeyword && onRemoveKeyword);
 
   return (
-    <ul className="weapon-keywords" aria-label={`${weapon.name} keywords`}>
-      {keywords.map((keyword) => (
-        <li key={keyword.name}>
+    <div className="keyword-row">
+      {keywords.length > 0 && (
+        <ul className="weapon-keywords" aria-label={`${weapon.name} keywords`}>
+          {keywords.map((keyword) => (
+            <li key={keyword.name}>
+              <button
+                aria-disabled={!keyword.description}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+
+                  if (keyword.description) {
+                    onKeywordSelect?.({
+                      description: keyword.description,
+                      name: keyword.name,
+                    });
+                  }
+                }}
+              >
+                {keyword.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEditKeywords && (
+        <div className="chip-controls" aria-label={`${weapon.name} keyword controls`}>
           <button
-            disabled={!keyword.description}
+            aria-label={`Add keyword to ${weapon.name}`}
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-
-              if (keyword.description) {
-                onKeywordSelect?.({
-                  description: keyword.description,
-                  name: keyword.name,
-                });
-              }
+              onAddKeyword?.();
             }}
           >
-            {keyword.name}
+            +
           </button>
-        </li>
-      ))}
-    </ul>
+          <button
+            aria-label={`Remove keyword from ${weapon.name}`}
+            disabled={keywords.length === 0}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemoveKeyword?.();
+            }}
+          >
+            -
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

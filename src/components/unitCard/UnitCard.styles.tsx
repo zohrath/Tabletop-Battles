@@ -1,9 +1,14 @@
 import styled from "@emotion/styled";
 
-export const Card = styled.article`
+interface CardProps {
+  backgroundColor?: string;
+}
+
+export const Card = styled.article<CardProps>`
+  background-color: ${(props) => props.backgroundColor};
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 16px;
+  padding: 16px 16px 38px;
   position: relative;
 
   &:hover {

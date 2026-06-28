@@ -22,14 +22,19 @@ export function getActiveWeapons(unit: ArmyUnit) {
       const key = `${weapon.typeName}-${weapon.name}`;
       const current = weaponCounts.get(key);
       const carriers = new Set(current?.carriers ?? []);
+      const keywordOverride = unit.weaponKeywordOverrides?.find(
+        (override) => override.weaponKey === key,
+      );
 
       carriers.add(model.name);
 
       weaponCounts.set(key, {
         carriers: [...carriers],
         characteristics: weapon.characteristics,
+        customKeywords: keywordOverride?.added,
         name: weapon.name,
         number: (current?.number ?? 0) + activeWeaponCount,
+        removedKeywords: keywordOverride?.removed,
         rules: weapon.rules,
         typeName: weapon.typeName,
       });
@@ -75,7 +80,7 @@ export function getWeaponStats(
 }
 
 export function getWeaponKeywords(
-  weapon: Pick<ArmyUnitWeapon, "characteristics" | "rules">,
+  weapon: ActiveWeapon | Pick<ArmyUnitWeapon, "characteristics" | "rules">,
 ) {
   const importedKeywords = weapon.characteristics.find(
     (stat) => stat.name.toUpperCase() === "KEYWORDS",
@@ -86,16 +91,42 @@ export function getWeaponKeywords(
       .map((keyword) => keyword.trim())
       .filter((keyword) => keyword && keyword !== "-") ?? [];
 
-  return [...new Set(keywords.filter(Boolean))].map((keyword) => {
-    const matchingRule = weapon.rules.find((rule) =>
-      keyword.toLowerCase().startsWith(rule.name.toLowerCase()),
-    );
+  const removedKeywords = "removedKeywords" in weapon
+    ? (weapon.removedKeywords ?? []).map(normalizeKeywordName)
+    : [];
+  const customKeywords = "customKeywords" in weapon
+    ? (weapon.customKeywords ?? [])
+    : [];
+  const keywordDetails = [...new Set(keywords.filter(Boolean))]
+    .filter((keyword) => !removedKeywords.includes(normalizeKeywordName(keyword)))
+    .map((keyword) => {
+      const matchingRule = weapon.rules.find((rule) =>
+        keyword.toLowerCase().startsWith(rule.name.toLowerCase()),
+      );
 
-    return {
-      description: matchingRule?.description,
-      name: keyword,
-    };
+      return {
+        description: matchingRule?.description,
+        name: keyword,
+      };
+    });
+
+  customKeywords.forEach((keyword) => {
+    if (
+      !removedKeywords.includes(normalizeKeywordName(keyword.name)) &&
+      !keywordDetails.some(
+        (existingKeyword) =>
+          normalizeKeywordName(existingKeyword.name) ===
+          normalizeKeywordName(keyword.name),
+      )
+    ) {
+      keywordDetails.push({
+        description: keyword.description,
+        name: keyword.name,
+      });
+    }
   });
+
+  return keywordDetails;
 }
 
 export function getWeaponKey(weapon: ActiveWeapon) {
@@ -134,4 +165,8 @@ function scaleAttackValue(value: string, weaponCount: number) {
   }
 
   return formatWeaponCount(numericValue * weaponCount);
+}
+
+function normalizeKeywordName(value: string) {
+  return value.trim().toLowerCase();
 }

@@ -23,8 +23,12 @@ import {
 } from "./ArmyUnitList.styles";
 
 export function ArmyUnitList({
+  onAddAbility,
+  onAddWeaponKeyword,
   onAbilityDisplayNameChange,
   onModelCountChange,
+  onRemoveAbility,
+  onRemoveWeaponKeyword,
   units,
 }: ArmyUnitListProps) {
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -42,9 +46,14 @@ export function ArmyUnitList({
 
   return (
     <section className="unit-list" aria-label="Imported army units">
-      {units.map((unit) => (
+      {units.map((unit, index) => (
         <UnitCard
+          index={index}
           key={unit.id}
+          onAddAbility={onAddAbility}
+          onAddWeaponKeyword={onAddWeaponKeyword}
+          onRemoveAbility={onRemoveAbility}
+          onRemoveWeaponKeyword={onRemoveWeaponKeyword}
           unit={unit}
           setSelectedKeyword={setSelectedKeyword}
           setSelectedUnitId={setSelectedUnitId}
@@ -123,7 +132,9 @@ export function ArmyUnitList({
             <Header
               title={selectedKeyword.displayName || selectedKeyword.name}
               titleId="keyword-modal-title"
-              subtitle={selectedKeyword.source === "ability" ? "Ability" : "Keyword"}
+              subtitle={
+                selectedKeyword.source === "ability" ? "Ability" : "Keyword"
+              }
             />
           }
           maxWidth={560}

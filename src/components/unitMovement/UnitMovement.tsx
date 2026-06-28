@@ -1,7 +1,7 @@
 import type { UnitMovementProps } from "../../types/armyUnitList";
 
 export function UnitMovement({ unit }: UnitMovementProps) {
-  const unitProfiles = unit.profiles.filter(
+  const unitProfiles = [...unit.profiles, ...unit.models.flatMap((model) => model.profiles)].filter(
     (profile) => profile.typeName === "Unit",
   );
   const movementValues = [

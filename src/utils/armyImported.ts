@@ -13,6 +13,7 @@ export type ArmyUnit = {
   number: number
   points?: number
   abilities: ArmyUnitAbility[]
+  weaponKeywordOverrides?: ArmyUnitWeaponKeywordOverride[]
   categories: ArmyImportedCategory[]
   profiles: ArmyImportedProfile[]
   models: ArmyUnitModel[]
@@ -22,6 +23,19 @@ export type ArmyUnitAbility = {
   id: string
   name: string
   displayName?: string
+  description: string
+  userAdded?: boolean
+}
+
+export type ArmyUnitWeaponKeywordOverride = {
+  weaponKey: string
+  added: ArmyUnitWeaponKeyword[]
+  removed: string[]
+}
+
+export type ArmyUnitWeaponKeyword = {
+  id: string
+  name: string
   description: string
 }
 

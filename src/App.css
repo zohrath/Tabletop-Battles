@@ -185,19 +185,33 @@
 
 .weapon-keywords {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 4px;
   list-style: none;
   margin: 6px 0 0;
+  min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow: hidden;
   padding: 0;
-  white-space: nowrap;
   width: 100%;
 }
 
+.keyword-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.keyword-row .weapon-keywords {
+  margin: 0;
+}
+
 .weapon-keywords li {
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .weapon-keywords button {
@@ -206,10 +220,12 @@
   border-radius: 999px;
   color: var(--text-h);
   cursor: pointer;
-  flex: 0 0 auto;
+  max-width: 100%;
   font-size: 12px;
   line-height: 1.2;
+  overflow-wrap: anywhere;
   padding: 3px 7px;
+  white-space: normal;
 }
 
 .weapon-keywords button:not(:disabled):hover {
@@ -222,9 +238,61 @@
   opacity: 0.75;
 }
 
+.weapon-keywords button[aria-disabled="true"] {
+  cursor: default;
+}
+
 .weapon-keywords button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.chip-controls,
+.unit-chip-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.chip-controls button,
+.unit-chip-controls button {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-h);
+  cursor: pointer;
+  display: inline-flex;
+  font: 700 14px/1 var(--mono);
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  width: 24px;
+}
+
+.chip-controls button:hover,
+.unit-chip-controls button:hover {
+  border-color: var(--accent-border);
+}
+
+.chip-controls button:disabled,
+.unit-chip-controls button:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chip-controls button:focus-visible,
+.unit-chip-controls button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.unit-chip-controls {
+  bottom: 8px;
+  position: absolute;
+  right: 8px;
 }
 
 .unit-card strong {
@@ -471,6 +539,357 @@
   color: var(--text-h);
 }
 
+.selected-detachment {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.selected-detachment > span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.selected-detachment .weapon-keywords {
+  margin: 0;
+  width: auto;
+}
+
+.detachment-editor,
+.detachment-list,
+.detachment-card,
+.stratagem-editor-list,
+.stratagem-editor-card,
+.detachment-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.detachment-editor {
+  margin-top: 16px;
+}
+
+.detachment-editor label,
+.detachment-selector,
+.detachment-card label,
+.stratagem-editor-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.detachment-editor label span,
+.detachment-selector > span,
+.detachment-card label span,
+.stratagem-editor-card label span,
+.phase-picker legend {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.detachment-editor input,
+.detachment-editor select,
+.detachment-editor textarea {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--text-h);
+  font: 700 16px/1.3 var(--sans);
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.detachment-editor select {
+  min-height: 42px;
+}
+
+.detachment-editor option {
+  font-size: 16px;
+}
+
+.detachment-selector-current,
+.detachment-editor .detachment-option-list button {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--text-h);
+  display: flex;
+  font: 700 16px/1.3 var(--sans);
+  min-height: 42px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.detachment-option-list {
+  display: grid;
+  gap: 6px;
+}
+
+.detachment-editor .detachment-option-list button {
+  cursor: pointer;
+}
+
+.detachment-editor .detachment-option-list button[aria-selected="true"] {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.detachment-editor .detachment-option-list button:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.detachment-editor textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.detachment-editor button {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.detachment-editor button:hover {
+  border-color: var(--accent-border);
+}
+
+.detachment-editor button:focus-visible,
+.detachment-editor input:focus-visible,
+.detachment-editor select:focus-visible,
+.detachment-editor textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.detachment-card,
+.stratagem-editor-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.stratagem-editor-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.stratagem-editor-heading h3,
+.detachment-detail h3 {
+  color: var(--text);
+  font-size: 12px;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.stratagem-editor-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 84px 150px;
+}
+
+.phase-picker {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.phase-picker label {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.danger-button {
+  justify-self: start;
+}
+
+.detachment-detail section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.detachment-detail p {
+  color: var(--text-h);
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.detachment-detail ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.detachment-detail li {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.detachment-detail strong {
+  color: var(--text-h);
+}
+
+.detachment-detail li span {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.chip-edit-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.chip-edit-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.chip-edit-form label span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.chip-edit-form input,
+.chip-edit-form textarea {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: var(--text-h);
+  font: 700 16px/1.3 var(--sans);
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.chip-edit-form textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.chip-edit-actions,
+.chip-remove-list {
+  display: grid;
+  gap: 8px;
+}
+
+.chip-edit-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.chip-edit-actions button,
+.chip-remove-list button {
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.chip-remove-list {
+  margin-top: 16px;
+}
+
+.chip-remove-list button {
+  text-align: left;
+}
+
+.chip-edit-actions button:hover,
+.chip-remove-list button:hover {
+  border-color: var(--accent-border);
+}
+
+.chip-edit-actions button:disabled {
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.chip-edit-form input:focus-visible,
+.chip-edit-form textarea:focus-visible,
+.chip-edit-actions button:focus-visible,
+.chip-remove-list button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chip-empty-state {
+  color: var(--text);
+  margin-top: 16px;
+}
+
+.chip-undo {
+  align-items: center;
+  background: var(--social-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 8px 10px;
+}
+
+.chip-undo span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chip-undo button {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.chip-undo button:hover {
+  border-color: var(--accent-border);
+}
+
+.chip-undo button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding: 20px 20px 128px;
@@ -496,6 +915,10 @@
 
   .army-manager-card__actions button {
     flex: 1 1 0;
+  }
+
+  .stratagem-editor-grid {
+    grid-template-columns: 1fr;
   }
 
 }

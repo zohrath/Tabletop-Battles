@@ -14,6 +14,7 @@ import {
   type Turn,
 } from "./types/BattlePhase";
 import { Phase } from "./types/Phase";
+import type { Stratagem, StratagemTiming } from "./types/Stratagem";
 import type { ArmyImported } from "./types/armyImported";
 import {
   extractArmyRules,
@@ -26,8 +27,14 @@ import {
   coreStratagems,
   getStratagemsForBattlePhase,
 } from "./utils/stratagems";
+import {
+  getActiveWeapons,
+  getWeaponKey,
+  getWeaponKeywords,
+} from "./utils/weapon";
 
 const SAVED_ARMIES_STORAGE_KEY = "tabletop-battles.saved-armies";
+const DETACHMENTS_STORAGE_KEY = "tabletop-battles.detachments";
 const PHASES = Object.values(Phase) as Phase[];
 
 type AppPage = "battle" | "armies" | "armyRule";
@@ -42,14 +49,61 @@ type SavedArmy = {
   id: string;
   importedAt: string;
   name: string;
+  selectedDetachmentId?: string;
   selectedArmyRuleChoiceId?: string;
   sourceFileName: string;
   armyRules: ArmyRule[];
   units: ArmyUnit[];
 };
 
+type DetachmentPack = {
+  id: string;
+  name: string;
+  detachmentRule: string;
+  enhancements: string;
+  stratagems: DetachmentStratagem[];
+};
+
+type DetachmentStratagem = {
+  id: string;
+  name: string;
+  cpCost: number;
+  description: string;
+  phases: Phase[] | "Any";
+  timing: StratagemTiming;
+};
+
+type WeaponKeywordTarget = {
+  unitId: string;
+  weaponKey: string;
+};
+
+type ChipUndo = {
+  label: string;
+  undo: () => void;
+};
+
+const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
+  {
+    id: "bastion-task-force",
+    name: "Bastion Task Force",
+    detachmentRule: "",
+    enhancements: "",
+    stratagems: bastionTaskForceStratagems.map((stratagem) => ({
+      id: stratagem.id,
+      name: stratagem.name,
+      cpCost: stratagem.cpCost,
+      description: stratagem.description,
+      phases: stratagem.phases,
+      timing: stratagem.timing,
+    })),
+  },
+];
+
 function App() {
   const [savedArmies, setSavedArmies] = useState<SavedArmy[]>(loadSavedArmies);
+  const [detachmentPacks, setDetachmentPacks] =
+    useState<DetachmentPack[]>(loadDetachmentPacks);
   const [activeArmyId, setActiveArmyId] = useState(
     () => savedArmies[0]?.id ?? "",
   );
@@ -58,6 +112,17 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [firstTurnOwner, setFirstTurnOwner] = useState<TurnOwner | null>(null);
   const [firstTurnModalOpen, setFirstTurnModalOpen] = useState(false);
+  const [detachmentEditorOpen, setDetachmentEditorOpen] = useState(false);
+  const [selectedDetachmentDetail, setSelectedDetachmentDetail] =
+    useState<DetachmentPack | null>(null);
+  const [addAbilityUnitId, setAddAbilityUnitId] = useState<string | null>(null);
+  const [removeAbilityUnitId, setRemoveAbilityUnitId] = useState<string | null>(
+    null,
+  );
+  const [addWeaponKeywordTarget, setAddWeaponKeywordTarget] =
+    useState<WeaponKeywordTarget | null>(null);
+  const [removeWeaponKeywordTarget, setRemoveWeaponKeywordTarget] =
+    useState<WeaponKeywordTarget | null>(null);
   const [stratagemsIndicatorOpen, setStratagemsIndicatorOpen] =
     useState(false);
   const [battlePhase, setBattlePhase] =
@@ -65,17 +130,42 @@ function App() {
 
   const activeArmy =
     savedArmies.find((army) => army.id === activeArmyId) ?? null;
+  const selectedDetachment =
+    detachmentPacks.find(
+      (detachment) => detachment.id === activeArmy?.selectedDetachmentId,
+    ) ?? null;
+  const detachmentStratagems = getDetachmentStratagems(selectedDetachment);
   const turnOwners = getTurnOwners(firstTurnOwner);
   const visibleCoreStratagems = getStratagemsForBattlePhase(
     coreStratagems,
     battlePhase,
   );
   const visibleDetachmentStratagems = getStratagemsForBattlePhase(
-    bastionTaskForceStratagems,
+    detachmentStratagems,
     battlePhase,
   );
   const hasVisibleStratagems =
     visibleCoreStratagems.length > 0 || visibleDetachmentStratagems.length > 0;
+  const addAbilityUnit = getSavedUnit(activeArmy, addAbilityUnitId);
+  const removeAbilityUnit = getSavedUnit(activeArmy, removeAbilityUnitId);
+  const addWeaponKeywordUnit = getSavedUnit(
+    activeArmy,
+    addWeaponKeywordTarget?.unitId ?? null,
+  );
+  const removeWeaponKeywordUnit = getSavedUnit(
+    activeArmy,
+    removeWeaponKeywordTarget?.unitId ?? null,
+  );
+  const addWeaponKeywordName = addWeaponKeywordUnit && addWeaponKeywordTarget
+    ? getWeaponName(addWeaponKeywordUnit, addWeaponKeywordTarget.weaponKey)
+    : "";
+  const removeWeaponKeywordNames =
+    removeWeaponKeywordUnit && removeWeaponKeywordTarget
+      ? getVisibleWeaponKeywordNames(
+          removeWeaponKeywordUnit,
+          removeWeaponKeywordTarget.weaponKey,
+        )
+      : [];
 
   async function handleRosterFile(file: File | undefined) {
     setError("");
@@ -191,6 +281,76 @@ function App() {
     );
   }
 
+  function chooseDetachment(detachmentId: string) {
+    if (!activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) =>
+        army.id === activeArmy.id
+          ? { ...army, selectedDetachmentId: detachmentId || undefined }
+          : army,
+      ),
+    );
+  }
+
+  function updateDetachmentPack(nextDetachment: DetachmentPack) {
+    updateDetachmentPacks((currentDetachments) => {
+      const existingIndex = currentDetachments.findIndex(
+        (detachment) => detachment.id === nextDetachment.id,
+      );
+
+      if (existingIndex === -1) {
+        return [...currentDetachments, nextDetachment];
+      }
+
+      return currentDetachments.map((detachment) =>
+        detachment.id === nextDetachment.id ? nextDetachment : detachment,
+      );
+    });
+  }
+
+  function createDetachmentPack() {
+    const id = createId();
+
+    updateDetachmentPack({
+      id,
+      name: "New Detachment",
+      detachmentRule: "",
+      enhancements: "",
+      stratagems: [],
+    });
+  }
+
+  function deleteDetachmentPack(detachmentId: string) {
+    updateDetachmentPacks((currentDetachments) =>
+      currentDetachments.filter((detachment) => detachment.id !== detachmentId),
+    );
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) =>
+        army.selectedDetachmentId === detachmentId
+          ? { ...army, selectedDetachmentId: undefined }
+          : army,
+      ),
+    );
+  }
+
+  function updateDetachmentPacks(
+    getNextDetachments: (
+      currentDetachments: DetachmentPack[],
+    ) => DetachmentPack[],
+  ) {
+    setDetachmentPacks((currentDetachments) => {
+      const nextDetachments = getNextDetachments(currentDetachments);
+      localStorage.setItem(
+        DETACHMENTS_STORAGE_KEY,
+        JSON.stringify(nextDetachments),
+      );
+      return nextDetachments;
+    });
+  }
+
   function changeAbilityDisplayName(
     unitId: string,
     abilityId: string,
@@ -225,6 +385,273 @@ function App() {
               ),
             };
           }),
+        };
+      }),
+    );
+  }
+
+  function addUnitAbility(unitId: string) {
+    setAddAbilityUnitId(unitId);
+  }
+
+  function saveUnitAbility(unitId: string, name: string, description: string) {
+    if (!name.trim() || !activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) =>
+            unit.id === unitId
+              ? {
+                  ...unit,
+                  abilities: [
+                    ...(unit.abilities ?? []),
+                    {
+                      id: createId(),
+                      name: name.trim(),
+                      description: description.trim(),
+                      userAdded: true,
+                    },
+                  ],
+                }
+              : unit,
+          ),
+        };
+      }),
+    );
+    setAddAbilityUnitId(null);
+  }
+
+  function removeUnitAbility(unitId: string) {
+    setRemoveAbilityUnitId(unitId);
+  }
+
+  function deleteUnitAbility(unitId: string, name: string): ChipUndo | undefined {
+    if (!name.trim() || !activeArmy) {
+      return undefined;
+    }
+
+    const unit = activeArmy.units.find((currentUnit) => currentUnit.id === unitId);
+    const removedAbility = (unit?.abilities ?? []).find(
+      (ability) =>
+        normalizeName(ability.displayName || ability.name) === normalizeName(name),
+    );
+
+    if (!removedAbility) {
+      return undefined;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((currentUnit) =>
+            currentUnit.id === unitId
+              ? {
+                  ...currentUnit,
+                  abilities: (currentUnit.abilities ?? []).filter(
+                    (ability) =>
+                      normalizeName(ability.displayName || ability.name) !==
+                      normalizeName(name),
+                  ),
+                }
+              : currentUnit,
+          ),
+        };
+      }),
+    );
+
+    return {
+      label: removedAbility.displayName || removedAbility.name,
+      undo: () => restoreUnitAbility(unitId, removedAbility),
+    };
+  }
+
+  function restoreUnitAbility(
+    unitId: string,
+    ability: ArmyUnit["abilities"][number],
+  ) {
+    if (!activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) => {
+            if (unit.id !== unitId) {
+              return unit;
+            }
+
+            const abilities = unit.abilities ?? [];
+
+            if (
+              abilities.some(
+                (currentAbility) => currentAbility.id === ability.id,
+              )
+            ) {
+              return unit;
+            }
+
+            return {
+              ...unit,
+              abilities: [...abilities, ability].sort(compareSavedAbilities),
+            };
+          }),
+        };
+      }),
+    );
+  }
+
+  function addWeaponKeyword(unitId: string, weaponKey: string) {
+    setAddWeaponKeywordTarget({ unitId, weaponKey });
+  }
+
+  function saveWeaponKeyword(
+    unitId: string,
+    weaponKey: string,
+    name: string,
+    description: string,
+  ) {
+    if (!name.trim() || !activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) =>
+            unit.id === unitId
+              ? {
+                  ...unit,
+                  weaponKeywordOverrides: upsertWeaponKeywordOverride(
+                    unit.weaponKeywordOverrides ?? [],
+                    weaponKey,
+                    name.trim(),
+                    description.trim(),
+                  ),
+                }
+              : unit,
+          ),
+        };
+      }),
+    );
+    setAddWeaponKeywordTarget(null);
+  }
+
+  function removeWeaponKeyword(unitId: string, weaponKey: string) {
+    setRemoveWeaponKeywordTarget({ unitId, weaponKey });
+  }
+
+  function deleteWeaponKeyword(
+    unitId: string,
+    weaponKey: string,
+    name: string,
+  ): ChipUndo | undefined {
+    if (!name.trim() || !activeArmy) {
+      return undefined;
+    }
+
+    const unit = activeArmy.units.find((currentUnit) => currentUnit.id === unitId);
+    const weapon = unit
+      ? getActiveWeapons(unit).find(
+          (currentWeapon) => getWeaponKey(currentWeapon) === weaponKey,
+        )
+      : null;
+    const removedKeyword = weapon
+      ? getWeaponKeywords(weapon).find(
+          (keyword) => normalizeName(keyword.name) === normalizeName(name),
+        )
+      : null;
+
+    if (!removedKeyword) {
+      return undefined;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) =>
+            unit.id === unitId
+              ? {
+                  ...unit,
+                  weaponKeywordOverrides: removeWeaponKeywordOverride(
+                    unit.weaponKeywordOverrides ?? [],
+                    weaponKey,
+                    name.trim(),
+                  ),
+                }
+              : unit,
+          ),
+        };
+      }),
+    );
+
+    return {
+      label: removedKeyword.name,
+      undo: () =>
+        restoreWeaponKeyword(unitId, weaponKey, {
+          description: removedKeyword.description ?? "",
+          name: removedKeyword.name,
+        }),
+    };
+  }
+
+  function restoreWeaponKeyword(
+    unitId: string,
+    weaponKey: string,
+    keyword: { description: string; name: string },
+  ) {
+    if (!activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) => {
+        if (army.id !== activeArmy.id) {
+          return army;
+        }
+
+        return {
+          ...army,
+          units: army.units.map((unit) =>
+            unit.id === unitId
+              ? {
+                  ...unit,
+                  weaponKeywordOverrides: restoreWeaponKeywordOverride(
+                    unit.weaponKeywordOverrides ?? [],
+                    weaponKey,
+                    keyword,
+                  ),
+                }
+              : unit,
+          ),
         };
       }),
     );
@@ -319,6 +746,16 @@ function App() {
               >
                 First Turn
               </button>
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => {
+                  setDetachmentEditorOpen(true);
+                  setMenuOpen(false);
+                }}
+              >
+                Detachments
+              </button>
               <label className="menu-item">
                 <input
                   accept="application/json,.json"
@@ -375,9 +812,21 @@ function App() {
             />
           )}
           <SelectedArmyRuleBanner army={activeArmy} />
+          <SelectedDetachmentChip
+            detachment={selectedDetachment}
+            onOpen={() => {
+              if (selectedDetachment) {
+                setSelectedDetachmentDetail(selectedDetachment);
+              }
+            }}
+          />
           <ArmyUnitList
+            onAddAbility={addUnitAbility}
+            onAddWeaponKeyword={addWeaponKeyword}
             onAbilityDisplayNameChange={changeAbilityDisplayName}
             onModelCountChange={changeModelCount}
+            onRemoveAbility={removeUnitAbility}
+            onRemoveWeaponKeyword={removeWeaponKeyword}
             units={activeArmy?.units ?? []}
           />
         </>
@@ -421,6 +870,111 @@ function App() {
             ))}
           </fieldset>
         </Modal>
+      )}
+      {detachmentEditorOpen && (
+        <Modal
+          ariaLabelledBy="detachment-editor-title"
+          closeAriaLabel="Close detachment editor"
+          header={
+            <Header
+              title="Detachments"
+              titleId="detachment-editor-title"
+              subtitle="Create detachments, paste rules, and attach stratagems."
+            />
+          }
+          maxWidth={760}
+          onClose={() => setDetachmentEditorOpen(false)}
+        >
+          <DetachmentEditor
+            activeArmy={activeArmy}
+            detachmentPacks={detachmentPacks}
+            onCreateDetachment={createDetachmentPack}
+            onDeleteDetachment={deleteDetachmentPack}
+            onSelectDetachment={chooseDetachment}
+            onUpdateDetachment={updateDetachmentPack}
+          />
+        </Modal>
+      )}
+      {selectedDetachmentDetail && (
+        <Modal
+          ariaLabelledBy="detachment-detail-title"
+          closeAriaLabel="Close detachment details"
+          header={
+            <Header
+              title={selectedDetachmentDetail.name}
+              titleId="detachment-detail-title"
+              subtitle="Detachment"
+            />
+          }
+          maxWidth={640}
+          onClose={() => setSelectedDetachmentDetail(null)}
+        >
+          <DetachmentDetail detachment={selectedDetachmentDetail} />
+        </Modal>
+      )}
+      {addAbilityUnit && (
+        <AddChipModal
+          closeAriaLabel="Close ability editor"
+          descriptionLabel="Ability description"
+          itemType="Ability"
+          onClose={() => setAddAbilityUnitId(null)}
+          onSubmit={(name, description) =>
+            saveUnitAbility(addAbilityUnit.id, name, description)
+          }
+          subtitle={addAbilityUnit.name}
+          title="Add Ability"
+        />
+      )}
+      {removeAbilityUnit && (
+        <RemoveChipModal
+          closeAriaLabel="Close ability remover"
+          emptyText="No abilities to remove."
+          itemNames={(removeAbilityUnit.abilities ?? []).map(
+            (ability) => ability.displayName || ability.name,
+          )}
+          onClose={() => setRemoveAbilityUnitId(null)}
+          onRemove={(name) => deleteUnitAbility(removeAbilityUnit.id, name)}
+          subtitle={removeAbilityUnit.name}
+          title="Remove Ability"
+        />
+      )}
+      {addWeaponKeywordTarget && addWeaponKeywordUnit && (
+        <AddChipModal
+          closeAriaLabel="Close keyword editor"
+          descriptionLabel="Keyword description"
+          itemType="Keyword"
+          onClose={() => setAddWeaponKeywordTarget(null)}
+          onSubmit={(name, description) =>
+            saveWeaponKeyword(
+              addWeaponKeywordTarget.unitId,
+              addWeaponKeywordTarget.weaponKey,
+              name,
+              description,
+            )
+          }
+          subtitle={`${addWeaponKeywordUnit.name} - ${addWeaponKeywordName}`}
+          title="Add Keyword"
+        />
+      )}
+      {removeWeaponKeywordTarget && removeWeaponKeywordUnit && (
+        <RemoveChipModal
+          closeAriaLabel="Close keyword remover"
+          emptyText="No keywords to remove."
+          itemNames={removeWeaponKeywordNames}
+          onClose={() => setRemoveWeaponKeywordTarget(null)}
+          onRemove={(name) =>
+            deleteWeaponKeyword(
+              removeWeaponKeywordTarget.unitId,
+              removeWeaponKeywordTarget.weaponKey,
+              name,
+            )
+          }
+          subtitle={`${removeWeaponKeywordUnit.name} - ${getWeaponName(
+            removeWeaponKeywordUnit,
+            removeWeaponKeywordTarget.weaponKey,
+          )}`}
+          title="Remove Keyword"
+        />
       )}
       <PhaseIndicator
         battlePhase={battlePhase}
@@ -643,6 +1197,535 @@ function SelectedArmyRuleBanner({ army }: { army: SavedArmy | null }) {
   );
 }
 
+function SelectedDetachmentChip({
+  detachment,
+  onOpen,
+}: {
+  detachment: DetachmentPack | null;
+  onOpen: () => void;
+}) {
+  if (!detachment) {
+    return null;
+  }
+
+  return (
+    <section className="selected-detachment">
+      <span>Detachment</span>
+      <ul className="weapon-keywords">
+        <li>
+          <button type="button" onClick={onOpen}>
+            {detachment.name}
+          </button>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+type DetachmentEditorProps = {
+  activeArmy: SavedArmy | null;
+  detachmentPacks: DetachmentPack[];
+  onCreateDetachment: () => void;
+  onDeleteDetachment: (detachmentId: string) => void;
+  onSelectDetachment: (detachmentId: string) => void;
+  onUpdateDetachment: (detachment: DetachmentPack) => void;
+};
+
+function DetachmentEditor({
+  activeArmy,
+  detachmentPacks,
+  onCreateDetachment,
+  onDeleteDetachment,
+  onSelectDetachment,
+  onUpdateDetachment,
+}: DetachmentEditorProps) {
+  const [detachmentSelectorOpen, setDetachmentSelectorOpen] = useState(false);
+
+  return (
+    <section className="detachment-editor">
+      <div className="detachment-selector">
+        <span>Current army detachment</span>
+        <button
+          aria-expanded={detachmentSelectorOpen}
+          className="detachment-selector-current"
+          disabled={!activeArmy}
+          type="button"
+          onClick={() => setDetachmentSelectorOpen((isOpen) => !isOpen)}
+        >
+          {getSelectedDetachmentName(activeArmy, detachmentPacks)}
+          </button>
+        {detachmentSelectorOpen && (
+          <div
+            aria-label="Current army detachment options"
+            className="detachment-option-list"
+            role="listbox"
+          >
+            <button
+              aria-selected={!activeArmy?.selectedDetachmentId}
+              disabled={!activeArmy}
+              role="option"
+              type="button"
+              onClick={() => {
+                onSelectDetachment("");
+                setDetachmentSelectorOpen(false);
+              }}
+            >
+              None selected
+            </button>
+            {detachmentPacks.map((detachment) => (
+              <button
+                aria-selected={activeArmy?.selectedDetachmentId === detachment.id}
+                disabled={!activeArmy}
+                key={detachment.id}
+                role="option"
+                type="button"
+                onClick={() => {
+                  onSelectDetachment(detachment.id);
+                  setDetachmentSelectorOpen(false);
+                }}
+              >
+                {detachment.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button type="button" onClick={onCreateDetachment}>
+        Add Detachment
+      </button>
+
+      <div className="detachment-list">
+        {detachmentPacks.map((detachment) => (
+          <DetachmentEditorCard
+            detachment={detachment}
+            key={detachment.id}
+            onDeleteDetachment={onDeleteDetachment}
+            onUpdateDetachment={onUpdateDetachment}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function getSelectedDetachmentName(
+  activeArmy: SavedArmy | null,
+  detachmentPacks: DetachmentPack[],
+) {
+  if (!activeArmy?.selectedDetachmentId) {
+    return "None selected";
+  }
+
+  return (
+    detachmentPacks.find(
+      (detachment) => detachment.id === activeArmy.selectedDetachmentId,
+    )?.name ?? "None selected"
+  );
+}
+
+type DetachmentEditorCardProps = {
+  detachment: DetachmentPack;
+  onDeleteDetachment: (detachmentId: string) => void;
+  onUpdateDetachment: (detachment: DetachmentPack) => void;
+};
+
+function DetachmentEditorCard({
+  detachment,
+  onDeleteDetachment,
+  onUpdateDetachment,
+}: DetachmentEditorCardProps) {
+  const isBuiltIn = BUILT_IN_DETACHMENTS.some(
+    (builtInDetachment) => builtInDetachment.id === detachment.id,
+  );
+
+  return (
+    <article className="detachment-card">
+      <label>
+        <span>Name</span>
+        <input
+          value={detachment.name}
+          onChange={(event) =>
+            onUpdateDetachment({ ...detachment, name: event.target.value })
+          }
+        />
+      </label>
+      <label>
+        <span>Detachment Rule</span>
+        <textarea
+          value={detachment.detachmentRule}
+          onChange={(event) =>
+            onUpdateDetachment({
+              ...detachment,
+              detachmentRule: event.target.value,
+            })
+          }
+        />
+      </label>
+      <label>
+        <span>Enhancements</span>
+        <textarea
+          value={detachment.enhancements}
+          onChange={(event) =>
+            onUpdateDetachment({
+              ...detachment,
+              enhancements: event.target.value,
+            })
+          }
+        />
+      </label>
+
+      <div className="stratagem-editor-heading">
+        <h3>Stratagems</h3>
+        <button
+          type="button"
+          onClick={() =>
+            onUpdateDetachment({
+              ...detachment,
+              stratagems: [
+                ...detachment.stratagems,
+                {
+                  id: createId(),
+                  name: "New Stratagem",
+                  cpCost: 1,
+                  description: "",
+                  phases: "Any",
+                  timing: "both",
+                },
+              ],
+            })
+          }
+        >
+          Add Stratagem
+        </button>
+      </div>
+
+      <div className="stratagem-editor-list">
+        {detachment.stratagems.map((stratagem) => (
+          <StratagemEditorCard
+            key={stratagem.id}
+            stratagem={stratagem}
+            onDelete={() =>
+              onUpdateDetachment({
+                ...detachment,
+                stratagems: detachment.stratagems.filter(
+                  (currentStratagem) => currentStratagem.id !== stratagem.id,
+                ),
+              })
+            }
+            onUpdate={(nextStratagem) =>
+              onUpdateDetachment({
+                ...detachment,
+                stratagems: detachment.stratagems.map((currentStratagem) =>
+                  currentStratagem.id === nextStratagem.id
+                    ? nextStratagem
+                    : currentStratagem,
+                ),
+              })
+            }
+          />
+        ))}
+      </div>
+
+      {!isBuiltIn && (
+        <button
+          className="danger-button"
+          type="button"
+          onClick={() => onDeleteDetachment(detachment.id)}
+        >
+          Delete Detachment
+        </button>
+      )}
+    </article>
+  );
+}
+
+type StratagemEditorCardProps = {
+  stratagem: DetachmentStratagem;
+  onDelete: () => void;
+  onUpdate: (stratagem: DetachmentStratagem) => void;
+};
+
+function StratagemEditorCard({
+  stratagem,
+  onDelete,
+  onUpdate,
+}: StratagemEditorCardProps) {
+  const selectedPhases = stratagem.phases === "Any" ? [] : stratagem.phases;
+
+  return (
+    <article className="stratagem-editor-card">
+      <div className="stratagem-editor-grid">
+        <label>
+          <span>Name</span>
+          <input
+            value={stratagem.name}
+            onChange={(event) =>
+              onUpdate({ ...stratagem, name: event.target.value })
+            }
+          />
+        </label>
+        <label>
+          <span>CP</span>
+          <input
+            min={0}
+            type="number"
+            value={stratagem.cpCost}
+            onChange={(event) =>
+              onUpdate({
+                ...stratagem,
+                cpCost: Number(event.target.value) || 0,
+              })
+            }
+          />
+        </label>
+        <label>
+          <span>Timing</span>
+          <select
+            value={stratagem.timing}
+            onChange={(event) =>
+              onUpdate({
+                ...stratagem,
+                timing: event.target.value as StratagemTiming,
+              })
+            }
+          >
+            <option value="both">Both turns</option>
+            <option value="own-turn">Your turn</option>
+            <option value="opponent-turn">Opponent turn</option>
+          </select>
+        </label>
+      </div>
+
+      <fieldset className="phase-picker">
+        <legend>Phases</legend>
+        <label>
+          <input
+            checked={stratagem.phases === "Any"}
+            type="checkbox"
+            onChange={(event) =>
+              onUpdate({
+                ...stratagem,
+                phases: event.target.checked ? "Any" : [Phase.Command],
+              })
+            }
+          />
+          Any
+        </label>
+        {PHASES.map((phase) => (
+          <label key={phase}>
+            <input
+              checked={stratagem.phases !== "Any" && selectedPhases.includes(phase)}
+              disabled={stratagem.phases === "Any"}
+              type="checkbox"
+              onChange={(event) => {
+                const nextPhases = event.target.checked
+                  ? [...selectedPhases, phase]
+                  : selectedPhases.filter((selectedPhase) => selectedPhase !== phase);
+
+                onUpdate({
+                  ...stratagem,
+                  phases: nextPhases.length > 0 ? nextPhases : [Phase.Command],
+                });
+              }}
+            />
+            {phase.replace(" Phase", "")}
+          </label>
+        ))}
+      </fieldset>
+
+      <label>
+        <span>Stratagem Text</span>
+        <textarea
+          value={stratagem.description}
+          onChange={(event) =>
+            onUpdate({ ...stratagem, description: event.target.value })
+          }
+        />
+      </label>
+      <button type="button" onClick={onDelete}>
+        Delete Stratagem
+      </button>
+    </article>
+  );
+}
+
+function DetachmentDetail({ detachment }: { detachment: DetachmentPack }) {
+  return (
+    <div className="detachment-detail">
+      <section>
+        <h3>Detachment Rule</h3>
+        <p>{detachment.detachmentRule || "No detachment rule saved."}</p>
+      </section>
+      <section>
+        <h3>Enhancements</h3>
+        <p>{detachment.enhancements || "No enhancements saved."}</p>
+      </section>
+      <section>
+        <h3>Stratagems</h3>
+        {detachment.stratagems.length > 0 ? (
+          <ul>
+            {detachment.stratagems.map((stratagem) => (
+              <li key={stratagem.id}>
+                <strong>{stratagem.name}</strong>
+                <span>{stratagem.cpCost} CP</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No stratagems saved.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+type AddChipModalProps = {
+  closeAriaLabel: string;
+  descriptionLabel: string;
+  itemType: string;
+  onClose: () => void;
+  onSubmit: (name: string, description: string) => void;
+  subtitle: string;
+  title: string;
+};
+
+function AddChipModal({
+  closeAriaLabel,
+  descriptionLabel,
+  itemType,
+  onClose,
+  onSubmit,
+  subtitle,
+  title,
+}: AddChipModalProps) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  return (
+    <Modal
+      ariaLabelledBy="chip-add-modal-title"
+      closeAriaLabel={closeAriaLabel}
+      header={
+        <Header
+          title={title}
+          titleId="chip-add-modal-title"
+          subtitle={subtitle}
+        />
+      }
+      maxWidth={520}
+      onClose={onClose}
+    >
+      <form
+        className="chip-edit-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(name, description);
+        }}
+      >
+        <label>
+          <span>{itemType} name</span>
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>{descriptionLabel}</span>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+        <div className="chip-edit-actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button disabled={!name.trim()} type="submit">
+            Add
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+type RemoveChipModalProps = {
+  closeAriaLabel: string;
+  emptyText: string;
+  itemNames: string[];
+  onClose: () => void;
+  onRemove: (name: string) => ChipUndo | undefined;
+  subtitle: string;
+  title: string;
+};
+
+function RemoveChipModal({
+  closeAriaLabel,
+  emptyText,
+  itemNames,
+  onClose,
+  onRemove,
+  subtitle,
+  title,
+}: RemoveChipModalProps) {
+  const uniqueItemNames = [...new Set(itemNames)];
+  const [lastRemoved, setLastRemoved] = useState<ChipUndo | null>(null);
+
+  return (
+    <Modal
+      ariaLabelledBy="chip-remove-modal-title"
+      closeAriaLabel={closeAriaLabel}
+      header={
+        <Header
+          title={title}
+          titleId="chip-remove-modal-title"
+          subtitle={subtitle}
+        />
+      }
+      maxWidth={520}
+      onClose={onClose}
+    >
+      {uniqueItemNames.length > 0 ? (
+        <div className="chip-remove-list">
+          {uniqueItemNames.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => {
+                const undoAction = onRemove(name);
+
+                if (undoAction) {
+                  setLastRemoved(undoAction);
+                }
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="chip-empty-state">{emptyText}</p>
+      )}
+      {lastRemoved && (
+        <div className="chip-undo">
+          <span>Removed {lastRemoved.label}</span>
+          <button
+            type="button"
+            onClick={() => {
+              lastRemoved.undo();
+              setLastRemoved(null);
+            }}
+          >
+            Undo
+          </button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function SelectedArmyRuleDescription({ army }: { army: SavedArmy }) {
   const selectedChoice = getSelectedArmyRuleChoice(army);
 
@@ -663,6 +1746,46 @@ function getSelectedArmyRuleChoice(army: SavedArmy | null) {
       ?.flatMap((rule) => rule.choices)
       .find((choice) => choice.id === army.selectedArmyRuleChoiceId) ?? null
   );
+}
+
+function getSavedUnit(army: SavedArmy | null, unitId: string | null) {
+  if (!army || !unitId) {
+    return null;
+  }
+
+  return army.units.find((unit) => unit.id === unitId) ?? null;
+}
+
+function getWeaponName(unit: ArmyUnit, weaponKey: string) {
+  return (
+    getActiveWeapons(unit).find((weapon) => getWeaponKey(weapon) === weaponKey)
+      ?.name ?? "Weapon"
+  );
+}
+
+function getVisibleWeaponKeywordNames(unit: ArmyUnit, weaponKey: string) {
+  const weapon = getActiveWeapons(unit).find(
+    (currentWeapon) => getWeaponKey(currentWeapon) === weaponKey,
+  );
+
+  return weapon ? getWeaponKeywords(weapon).map((keyword) => keyword.name) : [];
+}
+
+function getDetachmentStratagems(detachment: DetachmentPack | null): Stratagem[] {
+  if (!detachment) {
+    return [];
+  }
+
+  return detachment.stratagems.map((stratagem) => ({
+    id: `${detachment.id}:${stratagem.id}`,
+    detachmentKey: detachment.id,
+    name: stratagem.name,
+    cpCost: stratagem.cpCost,
+    description: stratagem.description,
+    phases: stratagem.phases,
+    source: "detachment",
+    timing: stratagem.timing,
+  }));
 }
 
 type ArmyManagerProps = {
@@ -733,11 +1856,73 @@ function loadSavedArmies(): SavedArmy[] {
           ...ability,
           displayName: ability.displayName || undefined,
         })).sort(compareSavedAbilities),
+        weaponKeywordOverrides: (unit.weaponKeywordOverrides ?? []).map(
+          (override) => ({
+            weaponKey: override.weaponKey,
+            added: override.added ?? [],
+            removed: override.removed ?? [],
+          }),
+        ),
       })),
     }));
   } catch {
     return [];
   }
+}
+
+function loadDetachmentPacks(): DetachmentPack[] {
+  try {
+    const savedDetachments = localStorage.getItem(DETACHMENTS_STORAGE_KEY);
+    const parsedDetachments = savedDetachments
+      ? (JSON.parse(savedDetachments) as DetachmentPack[])
+      : [];
+
+    return mergeBuiltInDetachments(parsedDetachments);
+  } catch {
+    return BUILT_IN_DETACHMENTS;
+  }
+}
+
+function mergeBuiltInDetachments(savedDetachments: DetachmentPack[]) {
+  const savedById = new Map(
+    savedDetachments.map((detachment) => [detachment.id, detachment]),
+  );
+  const mergedBuiltIns = BUILT_IN_DETACHMENTS.map((detachment) =>
+    normalizeDetachmentPack(savedById.get(detachment.id) ?? detachment),
+  );
+  const customDetachments = savedDetachments
+    .filter(
+      (detachment) =>
+        !BUILT_IN_DETACHMENTS.some(
+          (builtInDetachment) => builtInDetachment.id === detachment.id,
+        ),
+    )
+    .map(normalizeDetachmentPack);
+
+  return [...mergedBuiltIns, ...customDetachments];
+}
+
+function normalizeDetachmentPack(detachment: DetachmentPack): DetachmentPack {
+  return {
+    id: detachment.id,
+    name: detachment.name || "Unnamed Detachment",
+    detachmentRule: detachment.detachmentRule ?? "",
+    enhancements: detachment.enhancements ?? "",
+    stratagems: (detachment.stratagems ?? []).map(normalizeDetachmentStratagem),
+  };
+}
+
+function normalizeDetachmentStratagem(
+  stratagem: DetachmentStratagem,
+): DetachmentStratagem {
+  return {
+    id: stratagem.id || createId(),
+    name: stratagem.name || "Unnamed Stratagem",
+    cpCost: Number.isFinite(stratagem.cpCost) ? stratagem.cpCost : 1,
+    description: stratagem.description ?? "",
+    phases: stratagem.phases === "Any" ? "Any" : stratagem.phases ?? "Any",
+    timing: stratagem.timing ?? "both",
+  };
 }
 
 function createId() {
@@ -771,6 +1956,143 @@ function compareSavedAbilities(
 
 function isSavedLeaderAbility(ability: ArmyUnit["abilities"][number]) {
   return ability.name.trim().toLowerCase() === "leader";
+}
+
+function upsertWeaponKeywordOverride(
+  overrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>,
+  weaponKey: string,
+  keywordName: string,
+  description: string,
+) {
+  const existingOverride = overrides.find(
+    (override) => override.weaponKey === weaponKey,
+  );
+  const nextKeyword = {
+    id: createId(),
+    name: keywordName,
+    description,
+  };
+
+  if (!existingOverride) {
+    return [
+      ...overrides,
+      {
+        weaponKey,
+        added: [nextKeyword],
+        removed: [],
+      },
+    ];
+  }
+
+  return overrides.map((override) => {
+    if (override.weaponKey !== weaponKey) {
+      return override;
+    }
+
+    return {
+      ...override,
+      added: [
+        ...override.added.filter(
+          (keyword) => normalizeName(keyword.name) !== normalizeName(keywordName),
+        ),
+        nextKeyword,
+      ],
+      removed: override.removed.filter(
+        (keyword) => normalizeName(keyword) !== normalizeName(keywordName),
+      ),
+    };
+  });
+}
+
+function removeWeaponKeywordOverride(
+  overrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>,
+  weaponKey: string,
+  keywordName: string,
+) {
+  const nextOverrides = overrides.map((override) => {
+    if (override.weaponKey !== weaponKey) {
+      return override;
+    }
+
+    return {
+      ...override,
+      added: override.added.filter(
+        (keyword) => normalizeName(keyword.name) !== normalizeName(keywordName),
+      ),
+      removed: [
+        ...override.removed.filter(
+          (keyword) => normalizeName(keyword) !== normalizeName(keywordName),
+        ),
+        keywordName,
+      ],
+    };
+  });
+
+  if (!nextOverrides.some((override) => override.weaponKey === weaponKey)) {
+    return [
+      ...nextOverrides,
+      {
+        weaponKey,
+        added: [],
+        removed: [keywordName],
+      },
+    ];
+  }
+
+  return nextOverrides.filter(
+    (override) => override.added.length > 0 || override.removed.length > 0,
+  );
+}
+
+function restoreWeaponKeywordOverride(
+  overrides: NonNullable<ArmyUnit["weaponKeywordOverrides"]>,
+  weaponKey: string,
+  keyword: { description: string; name: string },
+) {
+  const nextKeyword = {
+    id: createId(),
+    name: keyword.name,
+    description: keyword.description,
+  };
+  const nextOverrides = overrides.map((override) => {
+    if (override.weaponKey !== weaponKey) {
+      return override;
+    }
+
+    return {
+      ...override,
+      added: [
+        ...override.added.filter(
+          (currentKeyword) =>
+            normalizeName(currentKeyword.name) !== normalizeName(keyword.name),
+        ),
+        nextKeyword,
+      ],
+      removed: override.removed.filter(
+        (currentKeyword) =>
+          normalizeName(currentKeyword) !== normalizeName(keyword.name),
+      ),
+    };
+  });
+
+  if (!nextOverrides.some((override) => override.weaponKey === weaponKey)) {
+    return [
+      ...nextOverrides,
+      {
+        weaponKey,
+        added: [nextKeyword],
+        removed: [],
+      },
+    ];
+  }
+
+  return nextOverrides.filter(
+    (override) => override.added.length > 0 || override.removed.length > 0,
+  );
+}
+
+function normalizeName(value: string) {
+  return value.trim().toLowerCase();
 }
 
 export default App;

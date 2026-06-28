@@ -6,20 +6,30 @@ import { UnitMovement } from "../unitMovement/UnitMovement";
 import { WeaponStatus } from "../weaponStatus/WeaponStatus";
 
 interface Props {
+  index: number;
   unit: ArmyUnit;
+  onAddAbility: (unitId: string) => void;
+  onAddWeaponKeyword: (unitId: string, weaponKey: string) => void;
+  onRemoveAbility: (unitId: string) => void;
+  onRemoveWeaponKeyword: (unitId: string, weaponKey: string) => void;
   setSelectedUnitId: (value: SetStateAction<string | null>) => void;
   setSelectedKeyword: (value: SetStateAction<KeywordDetail | null>) => void;
   setSelectedWeapon: (value: SetStateAction<ActiveWeapon | null>) => void;
 }
 
 const UnitCard = ({
+  index,
+  onAddAbility,
+  onAddWeaponKeyword,
+  onRemoveAbility,
+  onRemoveWeaponKeyword,
   unit,
   setSelectedUnitId,
   setSelectedKeyword,
   setSelectedWeapon,
 }: Props) => {
   return (
-    <Card>
+    <Card backgroundColor={index % 2 === 0 ? "#f9f9f9" : "#ffffff"}>
       <CardHeader
         role="button"
         tabIndex={0}
@@ -37,11 +47,40 @@ const UnitCard = ({
         </CardTitle>
         <WeaponStatus
           unit={unit}
+          onAddWeaponKeyword={(weaponKey) =>
+            onAddWeaponKeyword(unit.id, weaponKey)
+          }
           onKeywordSelect={(keyword) => setSelectedKeyword(keyword)}
+          onRemoveWeaponKeyword={(weaponKey) =>
+            onRemoveWeaponKeyword(unit.id, weaponKey)
+          }
           onWeaponSelect={(weapon) => setSelectedWeapon(weapon)}
         />
         <UnitAbilities unit={unit} onAbilitySelect={setSelectedKeyword} />
       </CardHeader>
+      <div className="unit-chip-controls" aria-label={`${unit.name} ability controls`}>
+        <button
+          aria-label={`Add ability to ${unit.name}`}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddAbility(unit.id);
+          }}
+        >
+          +
+        </button>
+        <button
+          aria-label={`Remove ability from ${unit.name}`}
+          disabled={(unit.abilities ?? []).length === 0}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemoveAbility(unit.id);
+          }}
+        >
+          -
+        </button>
+      </div>
     </Card>
   );
 };
