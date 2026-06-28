@@ -60,6 +60,17 @@ export async function handleApiRequest(request, response) {
       return;
     }
 
+    if (url.pathname === "/api/detachments") {
+      await handleDetachments(request, response);
+      return;
+    }
+
+    const detachmentMatch = url.pathname.match(/^\/api\/detachments\/([^/]+)$/);
+    if (detachmentMatch) {
+      await handleDetachment(request, response, detachmentMatch[1]);
+      return;
+    }
+
     const armyListMatch = url.pathname.match(/^\/api\/army-lists\/([^/]+)$/);
     if (armyListMatch) {
       await handleArmyList(request, response, armyListMatch[1]);
@@ -448,6 +459,65 @@ async function handleArmyList(request, response, armyListId) {
   sendJson(response, 405, { error: "Method not allowed" });
 }
 
+async function handleDetachments(request, response) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "GET") {
+    sendJson(response, 200, {
+      detachments: await getDetachmentsForUser(appUser.id),
+    });
+    return;
+  }
+
+  if (request.method === "POST") {
+    const body = await readJson(request);
+    const detachments = Array.isArray(body.detachments)
+      ? body.detachments
+      : body.detachment
+        ? [body.detachment]
+        : [];
+
+    if (detachments.length === 0) {
+      throw httpError(400, "At least one detachment is required");
+    }
+
+    for (const detachment of detachments) {
+      await upsertDetachment(appUser.id, detachment);
+    }
+
+    sendJson(response, 200, {
+      detachments: await getDetachmentsForUser(appUser.id),
+    });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
+async function handleDetachment(request, response, detachmentId) {
+  const appUser = await requireAppUser(request);
+
+  if (request.method === "PUT") {
+    const body = await readJson(request);
+    await upsertDetachment(appUser.id, body.detachment);
+    sendJson(response, 200, {
+      detachments: await getDetachmentsForUser(appUser.id),
+    });
+    return;
+  }
+
+  if (request.method === "DELETE") {
+    await pool.query(
+      "delete from detachments where id = $1 and created_by_user_id = $2",
+      [detachmentId, appUser.id],
+    );
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  sendJson(response, 405, { error: "Method not allowed" });
+}
+
 async function handleDatabaseStatus(request, response) {
   await requireAdmin(request);
 
@@ -610,6 +680,135 @@ async function upsertArmyList(userId, army) {
   }
 }
 
+async function getDetachmentsForUser(userId) {
+  const result = await pool.query(
+    `select
+       detachments.id,
+       detachments.name,
+       detachments.detachment_rule,
+       detachments.enhancements,
+       coalesce(
+         jsonb_agg(
+           jsonb_build_object(
+             'id', detachment_stratagems.id,
+             'name', detachment_stratagems.name,
+             'cpCost', detachment_stratagems.cp_cost,
+             'description', detachment_stratagems.description,
+             'phases', detachment_stratagems.phases,
+             'timing', detachment_stratagems.timing
+           )
+           order by detachment_stratagems.name
+         ) filter (where detachment_stratagems.id is not null),
+         '[]'::jsonb
+       ) as stratagems
+     from detachments
+     left join detachment_stratagems
+       on detachment_stratagems.detachment_id = detachments.id
+     where detachments.created_by_user_id = $1
+        or detachments.created_by_user_id is null
+     group by
+       detachments.id,
+       detachments.name,
+       detachments.detachment_rule,
+       detachments.enhancements
+     order by detachments.name asc`,
+    [userId],
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    detachmentRule: row.detachment_rule,
+    enhancements: row.enhancements,
+    name: row.name,
+    stratagems: row.stratagems,
+  }));
+}
+
+async function upsertDetachment(userId, detachment) {
+  const normalizedDetachment = normalizeDetachmentPayload(detachment);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    const upsertResult = await client.query(
+      `insert into detachments
+        (
+          id,
+          name,
+          detachment_rule,
+          enhancements,
+          is_builtin,
+          created_by_user_id
+        )
+       values ($1, $2, $3, $4, false, $5)
+       on conflict (id)
+       do update set
+         name = excluded.name,
+         detachment_rule = excluded.detachment_rule,
+         enhancements = excluded.enhancements,
+         updated_at = now()
+       where detachments.created_by_user_id = excluded.created_by_user_id
+          or detachments.created_by_user_id is null
+       returning id`,
+      [
+        normalizedDetachment.id,
+        normalizedDetachment.name,
+        normalizedDetachment.detachmentRule,
+        normalizedDetachment.enhancements,
+        userId,
+      ],
+    );
+
+    if (upsertResult.rowCount === 0) {
+      throw httpError(409, "Detachment id already exists for another user");
+    }
+
+    await client.query(
+      `delete from detachment_stratagems
+       using detachments
+       where detachment_stratagems.detachment_id = detachments.id
+         and detachments.id = $1
+         and (
+           detachments.created_by_user_id = $2
+           or detachments.created_by_user_id is null
+         )`,
+      [normalizedDetachment.id, userId],
+    );
+
+    for (const stratagem of normalizedDetachment.stratagems) {
+      await client.query(
+        `insert into detachment_stratagems
+          (
+            id,
+            detachment_id,
+            name,
+            cp_cost,
+            description,
+            phases,
+            timing
+          )
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          stratagem.id,
+          normalizedDetachment.id,
+          stratagem.name,
+          stratagem.cpCost,
+          stratagem.description,
+          JSON.stringify(stratagem.phases),
+          stratagem.timing,
+        ],
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function normalizeArmyListPayload(army) {
   if (!army || typeof army !== "object") {
     throw httpError(400, "Army list is required");
@@ -632,6 +831,49 @@ function normalizeArmyListPayload(army) {
     selectedDetachmentId: army.selectedDetachmentId || undefined,
     sourceFileName: String(army.sourceFileName ?? ""),
     units: Array.isArray(army.units) ? army.units : [],
+  };
+}
+
+function normalizeDetachmentPayload(detachment) {
+  if (!detachment || typeof detachment !== "object") {
+    throw httpError(400, "Detachment is required");
+  }
+
+  const id = String(detachment.id ?? "");
+  const name = String(detachment.name ?? "").trim();
+
+  if (!id || !name) {
+    throw httpError(400, "Detachment id and name are required");
+  }
+
+  return {
+    id,
+    detachmentRule: String(detachment.detachmentRule ?? ""),
+    enhancements: String(detachment.enhancements ?? ""),
+    name,
+    stratagems: Array.isArray(detachment.stratagems)
+      ? detachment.stratagems.map(normalizeDetachmentStratagemPayload)
+      : [],
+  };
+}
+
+function normalizeDetachmentStratagemPayload(stratagem) {
+  const id = String(stratagem.id ?? "");
+  const name = String(stratagem.name ?? "").trim();
+
+  if (!id || !name) {
+    throw httpError(400, "Stratagem id and name are required");
+  }
+
+  return {
+    id,
+    cpCost: Number.isFinite(Number(stratagem.cpCost))
+      ? Number(stratagem.cpCost)
+      : 1,
+    description: String(stratagem.description ?? ""),
+    name,
+    phases: stratagem.phases ?? "Any",
+    timing: stratagem.timing ?? "both",
   };
 }
 

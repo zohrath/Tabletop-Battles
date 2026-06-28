@@ -111,6 +111,10 @@ type ArmyListsResponse = {
   armies: SavedArmy[];
 };
 
+type DetachmentsResponse = {
+  detachments: DetachmentPack[];
+};
+
 const BUILT_IN_DETACHMENTS: DetachmentPack[] = [
   {
     id: "bastion-task-force",
@@ -255,6 +259,75 @@ function App() {
     }
 
     void loadDatabaseArmies();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, sessionStatus]);
+
+  useEffect(() => {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadDatabaseDetachments() {
+      try {
+        const { detachments } = await apiRequest<DetachmentsResponse>(
+          "/api/detachments",
+          {
+            token: authToken,
+          },
+        );
+        const normalizedDetachments = mergeBuiltInDetachments(detachments);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (detachments.length > 0) {
+          setDetachmentPacks(normalizedDetachments);
+          localStorage.setItem(
+            DETACHMENTS_STORAGE_KEY,
+            JSON.stringify(normalizedDetachments),
+          );
+          return;
+        }
+
+        const localDetachments = loadDetachmentPacks();
+
+        if (localDetachments.length === 0) {
+          return;
+        }
+
+        const imported = await apiRequest<DetachmentsResponse>(
+          "/api/detachments",
+          {
+            body: { detachments: localDetachments },
+            method: "POST",
+            token: authToken,
+          },
+        );
+        const importedDetachments = mergeBuiltInDetachments(
+          imported.detachments,
+        );
+
+        if (!cancelled) {
+          setDetachmentPacks(importedDetachments);
+          localStorage.setItem(
+            DETACHMENTS_STORAGE_KEY,
+            JSON.stringify(importedDetachments),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Could not sync detachments. Using browser storage.");
+        }
+      }
+    }
+
+    void loadDatabaseDetachments();
 
     return () => {
       cancelled = true;
@@ -585,6 +658,7 @@ function App() {
   }
 
   function deleteDetachmentPack(detachmentId: string) {
+    void deleteDetachmentFromDatabase(detachmentId);
     updateDetachmentPacks((currentDetachments) =>
       currentDetachments.filter((detachment) => detachment.id !== detachmentId),
     );
@@ -608,8 +682,32 @@ function App() {
         DETACHMENTS_STORAGE_KEY,
         JSON.stringify(nextDetachments),
       );
+      void syncDetachmentsToDatabase(nextDetachments);
       return nextDetachments;
     });
+  }
+
+  async function syncDetachmentsToDatabase(nextDetachments: DetachmentPack[]) {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    await apiRequest("/api/detachments", {
+      body: { detachments: nextDetachments },
+      method: "POST",
+      token: authToken,
+    }).catch(() => undefined);
+  }
+
+  async function deleteDetachmentFromDatabase(detachmentId: string) {
+    if (sessionStatus !== "logged-in" || !authToken) {
+      return;
+    }
+
+    await apiRequest(`/api/detachments/${detachmentId}`, {
+      method: "DELETE",
+      token: authToken,
+    }).catch(() => undefined);
   }
 
   function changeAbilityDisplayName(
