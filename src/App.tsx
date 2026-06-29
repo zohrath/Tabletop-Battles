@@ -572,60 +572,79 @@ function App() {
     );
   }
 
-  function updateDetachmentPacks(getNextDetachments: (currentDetachments: DetachmentPack[]) => DetachmentPack[]) {
-    setDetachmentPacks((currentDetachments) => {
-      const nextDetachments = getNextDetachments(currentDetachments);
-      if (!hasDatabaseSession(sessionStatus, authToken, authProvider)) {
-        localStorage.setItem(DETACHMENTS_STORAGE_KEY, JSON.stringify(nextDetachments));
-      }
-      void syncDetachmentsToDatabase(nextDetachments);
-      return nextDetachments;
-    });
+  function chooseDetachment(detachmentId: string) {
+    if (!activeArmy) {
+      return;
+    }
+
+    updateSavedArmies((currentArmies) =>
+      currentArmies.map((army) =>
+        army.id === activeArmy.id
+          ? {
+              ...army,
+              selectedDetachmentId: detachmentId || undefined,
+            }
+          : army,
+      ),
+    );
   }
 
-  function saveDetachmentEditor(
+  async function saveDetachmentEditor(
     nextDetachments: DetachmentPack[],
     selectedDetachmentId: string,
     deletedDetachmentIds: string[],
   ) {
-    deletedDetachmentIds.forEach((detachmentId) => {
-      void deleteDetachmentFromDatabase(detachmentId);
-    });
+    const normalizedDetachments = normalizeDetachmentPacks(nextDetachments);
 
-    updateDetachmentPacks(() => nextDetachments);
+    setError("");
 
-    if (activeArmy) {
-      updateSavedArmies((currentArmies) =>
-        currentArmies.map((army) =>
-          army.id === activeArmy.id
-            ? {
-                ...army,
-                selectedDetachmentId: selectedDetachmentId || undefined,
-              }
-            : army,
-        ),
-      );
+    try {
+      await Promise.all(deletedDetachmentIds.map((detachmentId) => deleteDetachmentFromDatabase(detachmentId)));
+
+      if (hasDatabaseSession(sessionStatus, authToken, authProvider)) {
+        setDetachmentPacks(await syncDetachmentsToDatabase(normalizedDetachments));
+      } else {
+        localStorage.setItem(DETACHMENTS_STORAGE_KEY, JSON.stringify(normalizedDetachments));
+        setDetachmentPacks(normalizedDetachments);
+      }
+
+      if (activeArmy) {
+        updateSavedArmies((currentArmies) =>
+          currentArmies.map((army) =>
+            army.id === activeArmy.id
+              ? {
+                  ...army,
+                  selectedDetachmentId: selectedDetachmentId || undefined,
+                }
+              : army,
+          ),
+        );
+      }
+
+      setDetachmentEditorOpen(false);
+    } catch {
+      setError("Could not sync detachments.");
     }
-
-    setDetachmentEditorOpen(false);
   }
 
   async function syncDetachmentsToDatabase(nextDetachments: DetachmentPack[]) {
     if (sessionStatus !== "logged-in") {
-      return;
+      return nextDetachments;
     }
 
     const token = await getApiAuthToken();
 
     if (!token) {
-      return;
+      throw new Error("Missing API token");
     }
 
-    await apiRequest("/api/detachments", {
+    const { detachments } = await apiRequest<DetachmentsResponse>("/api/detachments", {
       body: { detachments: nextDetachments },
       method: "POST",
       token,
-    }).catch(() => undefined);
+    });
+
+    return normalizeDetachmentPacks(detachments);
   }
 
   async function deleteDetachmentFromDatabase(detachmentId: string) {
@@ -961,6 +980,7 @@ function App() {
           element={
             <BattlePage
               activeArmy={activeArmy}
+              detachmentPacks={detachmentPacks}
               firstTurnOwner={firstTurnOwner}
               hasVisibleStratagems={hasVisibleStratagems}
               selectedDetachment={selectedDetachment}
@@ -970,6 +990,7 @@ function App() {
               onAbilityDisplayNameChange={changeAbilityDisplayName}
               onAddAbility={addUnitAbility}
               onAddWeaponKeyword={addWeaponKeyword}
+              onChooseDetachment={chooseDetachment}
               onModelCountChange={changeModelCount}
               onOpenDetachmentDetail={setSelectedDetachmentDetail}
               onRemoveAbility={removeUnitAbility}

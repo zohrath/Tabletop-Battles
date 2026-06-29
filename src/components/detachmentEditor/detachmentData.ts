@@ -49,7 +49,7 @@ function normalizeDetachmentPack(detachment: DetachmentPack): DetachmentPack {
 }
 
 function normalizeDetachmentStratagem(stratagem: DetachmentStratagem): DetachmentStratagem {
-  const imageKey = typeof stratagem.imageKey === "string" ? stratagem.imageKey : undefined;
+  const imageKey = normalizeImageKey(stratagem.imageKey);
 
   return {
     id: stratagem.id || createId(),
@@ -60,6 +60,15 @@ function normalizeDetachmentStratagem(stratagem: DetachmentStratagem): Detachmen
     phases: stratagem.phases === "Any" ? "Any" : (stratagem.phases ?? "Any"),
     timing: stratagem.timing ?? "both",
   };
+}
+
+function normalizeImageKey(imageKey: DetachmentStratagem["imageKey"]) {
+  if (typeof imageKey !== "string") {
+    return undefined;
+  }
+
+  const candidateKey = imageKey.split(/[/?#]/).filter(Boolean).at(-1) ?? imageKey;
+  return STRATAGEM_ICON_BY_KEY.has(candidateKey) ? candidateKey : undefined;
 }
 
 function getStratagemIconSrc(imageKey: string | undefined) {

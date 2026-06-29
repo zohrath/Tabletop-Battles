@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Select } from "../select/Select";
 import type { DetachmentPack, DetachmentStratagem, SavedArmy } from "../../types/AppData";
 import { Phase } from "../../types/Phase";
 import type { StratagemTiming } from "../../types/Stratagem";
@@ -295,46 +296,45 @@ function StratagemEditorCard({ stratagem, onDelete, onUpdate }: StratagemEditorC
             }
           />
         </label>
-        <label>
-          <span>Timing</span>
-          <select
-            value={stratagem.timing}
-            onChange={(event) =>
-              onUpdate({
-                ...stratagem,
-                timing: event.target.value as StratagemTiming,
-              })
-            }
-          >
-            <option value="both">Both turns</option>
-            <option value="own-turn">Your turn</option>
-            <option value="opponent-turn">Opponent turn</option>
-          </select>
-        </label>
+        <Select
+          label="Timing"
+          options={[
+            { label: "Both turns", value: "both" },
+            { label: "Your turn", value: "own-turn" },
+            { label: "Opponent turn", value: "opponent-turn" },
+          ]}
+          value={stratagem.timing}
+          onChange={(value) =>
+            onUpdate({
+              ...stratagem,
+              timing: value as StratagemTiming,
+            })
+          }
+        />
       </div>
 
       <fieldset className="stratagem-icon-picker">
         <legend>Icon</legend>
-        {selectedIcon && <img alt="" className="stratagem-icon-preview" src={selectedIcon.src} />}
-        <label>
-          <span>Image</span>
-          <select
-            value={stratagem.imageKey ?? ""}
-            onChange={(event) =>
-              onUpdate({
-                ...stratagem,
-                imageKey: event.target.value || undefined,
-              })
-            }
-          >
-            <option value="">Default icon</option>
-            {STRATAGEM_ICON_OPTIONS.map((icon) => (
-              <option key={icon.key} value={icon.key}>
-                {icon.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div aria-hidden="true" className="stratagem-icon-preview">
+          {selectedIcon && <img alt="" src={selectedIcon.src} />}
+        </div>
+        <Select
+          label="Image"
+          options={[
+            { label: "Default icon", value: "" },
+            ...STRATAGEM_ICON_OPTIONS.map((icon) => ({
+              label: icon.name,
+              value: icon.key,
+            })),
+          ]}
+          value={stratagem.imageKey ?? ""}
+          onChange={(value) =>
+            onUpdate({
+              ...stratagem,
+              imageKey: value || undefined,
+            })
+          }
+        />
       </fieldset>
 
       <fieldset className="phase-picker">

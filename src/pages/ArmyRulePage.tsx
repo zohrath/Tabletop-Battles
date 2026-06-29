@@ -1,3 +1,4 @@
+import { Select } from "../components/select/Select";
 import type { SavedArmy } from "../types/AppData";
 import { getSelectedArmyRuleChoice } from "../utils/armyRules";
 
@@ -24,20 +25,18 @@ export function ArmyRulePage({ army, onChooseArmyRule }: ArmyRulePageProps) {
         ? choiceRules.map((rule) => (
             <article className="army-rule-card" key={rule.id}>
               <h2>{rule.name}</h2>
-              <label>
-                <span>Chosen rule</span>
-                <select
-                  value={army.selectedArmyRuleChoiceId ?? ""}
-                  onChange={(event) => onChooseArmyRule(event.target.value)}
-                >
-                  <option value="">None selected</option>
-                  {rule.choices.map((choice) => (
-                    <option key={choice.id} value={choice.id}>
-                      {choice.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <Select
+                label="Chosen rule"
+                options={[
+                  { label: "None selected", value: "" },
+                  ...rule.choices.map((choice) => ({
+                    label: choice.name,
+                    value: choice.id,
+                  })),
+                ]}
+                value={army.selectedArmyRuleChoiceId ?? ""}
+                onChange={onChooseArmyRule}
+              />
               <SelectedArmyRuleDescription army={army} />
             </article>
           ))
